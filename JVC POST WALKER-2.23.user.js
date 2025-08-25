@@ -1312,7 +1312,10 @@ let initDoneEarly = false;
   }
 
   function collectTopicLinks(user){
-    const nodes=qa('#forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
+    const all=Array.from(document.querySelectorAll('a[href*="/forums/"][href$=".htm"]'));
+    let nodes=all.filter(a=>a.closest('#forum-main-col')||a.closest('.liste-sujets'));
+    if(nodes.length===0) nodes=all;
+    console.debug(`[collectTopicLinks] ${nodes.length} links found`);
     const out=[], seen=new Set();
     const mine = myPseudo()?.trim().toLowerCase();
     const posted = sessionCache.postedByUser?.[user] || [];
