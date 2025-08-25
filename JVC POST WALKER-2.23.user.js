@@ -639,13 +639,7 @@ let initDoneEarly = false;
   }
   async function handleTopicPage(template){
     const currentUrl = location.href;
-    const watchdog = setTimeout(async () => {
-      if(location.href === currentUrl){
-        log('Watchdog timeout → back to list.');
-        const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        location.href = lastList;
-      }
-    }, 5000);
+    let watchdog;
     try{
       await sessionGet();
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
@@ -701,6 +695,13 @@ let initDoneEarly = false;
       const postBtn = q('.postMessage__icon.icon-post-message, .jv-editor-submit, button[data-testid="submit"], .btn-poster-msg, input[type="submit"]');
       await humanHover(postBtn);
       postBtn?.click();
+      watchdog = setTimeout(async () => {
+        if(location.href === currentUrl){
+          log('Watchdog timeout → back to list.');
+          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          location.href = lastList;
+        }
+      }, 8000);
       let ok=false;
       const end=NOW()+10000;
       while(NOW()<end){
