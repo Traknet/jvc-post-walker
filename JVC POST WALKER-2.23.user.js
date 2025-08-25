@@ -818,7 +818,7 @@ let initDoneEarly = false;
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
           location.href = lastList;
         }
-      }, 13000);
+      }, 26000);
       let ok=false;
       const end=NOW()+10000;
       while(NOW()<end){
