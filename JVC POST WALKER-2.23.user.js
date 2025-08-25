@@ -146,45 +146,14 @@
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
     const conf = await getFullConf();
-    const keywords=['donc','mais','alors','sinon'];
-    const tokens = txt.match(/\s+|\w+|[^\s\w]+/g) || [];
-
-    async function typeToken(token){
-      for(const ch of token){
-        if(!conf.debug && !conf.dryRun && Math.random()<0.05){
-          const typoLen=Math.floor(rnd(1,4));
-          let typo='';
-          for(let i=0;i<typoLen;i++) typo+=rndChar();
-          await appendQuick(el, typo);
-          await sleep(rnd(80,160));
-          for(let i=0;i<typoLen;i++){
-            el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
-            el.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowLeft',bubbles:true}));
-            await sleep(rnd(40,90));
-          }
-          for(let i=0;i<typoLen;i++){
-            const corrected=getValue(el).slice(0,-1);
-            setValue(el, corrected);
-            el.dispatchEvent(new InputEvent('input',{inputType:'deleteContentBackward',bubbles:true}));
-            await sleep(rnd(40,90));
-          }
-          for(let i=0;i<typoLen;i++){
-            el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
-            el.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowRight',bubbles:true}));
-            await sleep(rnd(40,90));
-          }
-        }
-    }
-
-    for(const token of tokens){
-      if(/\w+/.test(token)){
-        if(Math.random()<0.1) await appendQuick(el, token);
-        else await typeToken(token);
-        if(keywords.includes(token.toLowerCase())) await sleep(rnd(500,1500));
-      } else {
-        await typeToken(token);
-        if(/[.,;:!?]/.test(token)) await sleep(rnd(500,1500));
-        }
+    for(const ch of txt){
+      if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
+        const typo = rndChar();
+        await appendQuick(el, typo);
+        await sleep(rnd(80,160));
+        const corrected = getValue(el).slice(0,-1);
+        setValue(el, corrected);
+        el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
       }
       const prev=(el.value??el.textContent??'');
       if(el.isContentEditable){ el.textContent = prev + ch; }
@@ -804,8 +773,6 @@ let initDoneEarly = false;
       if(locked){
         log('Topic locked → back to list.');
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        await randomScrollWait(1000, 4000);
-        await dwell(800, 1600);
         location.href = lastList;
         return false;
       }
@@ -839,12 +806,8 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
-      await randomScrollWait(1000, 3000);
-      await dwell(1200, 2500);
       setValue(zone,'');
       await typeMixed(zone, template);
-      await randomScrollWait(500, 1500);
-      await humanHover(zone);
       await dwell(800,1400);
       const beforeMsgs=qa('.bloc-message-forum').length;
       const prevUrl=location.href;
@@ -925,8 +888,6 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
-      await randomScrollWait(1000, 3000);
-      await dwell(1200, 2500);
       setValue(zone,'');
       await typeMixed(zone, template);
       await dwell(800,1400);
