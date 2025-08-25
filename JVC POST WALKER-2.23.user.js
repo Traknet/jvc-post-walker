@@ -80,17 +80,6 @@
       await dwell(400,1200);
     }
   }
-  
-  function estimateReadingTime(element){
-    if(!element) return 0;
-    const text = element.innerText || '';
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    const paragraphs = element.querySelectorAll('p').length;
-    const wordsPerMinute = 200;
-    const base = words / wordsPerMinute * 60 * 1000;
-    const extra = paragraphs * 400;
-    return Math.round(base + extra);
-  }
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const NOW=()=>Date.now();
@@ -102,15 +91,6 @@
   // track any pending login retry to avoid duplicate reloads
   let loginReloadTimeout=null;
   let loginAttempted=false;
-
-  let cursorX = (typeof window !== 'undefined' ? window.innerWidth/2 : 0);
-  let cursorY = (typeof window !== 'undefined' ? window.innerHeight/2 : 0);
-  if (typeof document !== 'undefined') {
-    document.addEventListener('mousemove', e => {
-      cursorX = e.clientX;
-      cursorY = e.clientY;
-    }, {passive:true});
-  }
 
   const logBuffer=[]; let logIdx=0; const log=(s)=>{
     logBuffer[logIdx++ % 200] = s;
@@ -166,47 +146,29 @@
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
     const conf = await getFullConf();
-    const WORD_PASTE_PROB = 0.1;
-    const logDelay = () => {
-      const u1 = Math.random();
-      const u2 = Math.random();
-      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-      return Math.round(Math.exp(4.2 + 0.4 * z));
-    };
-    for(let i=0;i<txt.length;i++){
-      let ch = txt[i];
-      if(!conf.debug && !conf.dryRun && /\S/.test(ch) && (i===0 || /\s/.test(txt[i-1])) && Math.random() < WORD_PASTE_PROB){
-        const match = txt.slice(i).match(/^\S+/);
-        if(match){
-          await appendQuick(el, match[0]);
-          ch = match[0].slice(-1);
-          i += match[0].length - 1;
-        }
-      }else{
-        if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
-          const typo = rndChar();
-          await appendQuick(el, typo);
-          await sleep(rnd(80,160));
-          const corrected = getValue(el).slice(0,-1);
-          setValue(el, corrected);
-          el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
-        }
-        const prev=(el.value??el.textContent??'');
-        if(el.isContentEditable){ el.textContent = prev + ch; }
-        else setVal(el, prev + ch);
-        el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
-        el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
-        el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
-        await sleep(logDelay());
-        if(Math.random()<0.03){
-          try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
-          catch(e){ console.error('[typeHuman scroll]', e); }
-          await sleep(logDelay());
-        }
+    for(const ch of txt){
+      if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
+        const typo = rndChar();
+        await appendQuick(el, typo);
+        await sleep(rnd(80,160));
+        const corrected = getValue(el).slice(0,-1);
+        setValue(el, corrected);
+        el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
       }
-        if(/[\s.,!?;:]/.test(ch)) await sleep(Math.round(rnd(200,400)));
+      const prev=(el.value??el.textContent??'');
+      if(el.isContentEditable){ el.textContent = prev + ch; }
+      else setVal(el, prev + ch);
+      el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
+      el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
+      el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
+      await human();
+      if(Math.random()<0.03){
+        try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
+        catch(e){ console.error('[typeHuman scroll]', e); }
+        await human();
+      }
     }
-    await sleep(logDelay());
+    await human();
   }
 
   // “Paste URLs, type everything else” for message field
@@ -271,23 +233,6 @@
         el.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:cx+rnd(-15,15),clientY:cy+rnd(-8,8)}));
         await sleep(40+Math.random()*90);
       }
-      const startX = cursorX;
-      const startY = cursorY;
-      const steps = 8 + Math.floor(Math.random()*8);
-      await new Promise(res => {
-        let step = 0;
-        function animate(){
-          step++;
-          const t = step/steps;
-          const x = startX + (cx - startX)*t + rnd(-2,2);
-          const y = startY + (cy - startY)*t + rnd(-2,2);
-          document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
-          cursorX = x;
-          cursorY = y;
-          if(step < steps) requestAnimationFrame(animate); else res();
-        }
-        requestAnimationFrame(animate);
-      });
       el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,clientX:cx,clientY:cy}));
     }catch(e){ console.error('[humanHover]', e); }
     await dwell(120,260);
@@ -347,7 +292,7 @@ const TOPIC_FAIL_COOLDOWN=5*60*1000;
 
 let onCache = false;
 // DM-specific tracking removed: no sent memory or cooldown bookkeeping
-let sessionCache = {active:false,startTs:0,stopTs:0,mpCount:0,mpNextDelay:Math.floor(rnd(2,5)),topicCount:0,watchdogFails:0};
+let sessionCache = {active:false,startTs:0,stopTs:0,mpCount:0,mpNextDelay:Math.floor(rnd(2,5)),topicCount:0};
 let sessionCacheLoaded = false;
 let initDoneEarly = false;
 
@@ -398,7 +343,7 @@ let initDoneEarly = false;
     }
     if(changed) await saveConf(cfg);
   }
-  
+
   async function checkCdnResources(box){
     const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
     let ok=true;
@@ -874,17 +819,7 @@ let initDoneEarly = false;
       watchdog = setTimeout(async () => {
         if(location.href === currentUrl){
           log('Watchdog timeout → back to list.');
-          sessionCache.watchdogFails = (sessionCache.watchdogFails || 0) + 1;
-          if(sessionCache.watchdogFails >= 3){
-            sessionCache.cooldownUntil = NOW() + rnd(120000, 180000);
-            sessionCache.watchdogFails = 0;
-          } else {
-            sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
-          }
-          await set(STORE_SESSION, sessionCache);
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-          sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
-          await set(STORE_SESSION, sessionCache);
           location.href = lastList;
         }
       }, WATCHDOG_MS);
@@ -904,7 +839,6 @@ let initDoneEarly = false;
       if(success){
         clearTimeout(watchdog);
         sessionCache.topicCount = (sessionCache.topicCount||0) + 1;
-        sessionCache.watchdogFails = 0;
         const { topicId } = currentTopicInfo();
         await set(STORE_PENDING_POST, null);
         sessionCache.postedTopics = sessionCache.postedTopics || [];
@@ -1020,7 +954,6 @@ let initDoneEarly = false;
     if(!Array.isArray(sessionCache.templatePool)) sessionCache.templatePool = [];
     if(typeof sessionCache.maxTopicPosts !== 'number') sessionCache.maxTopicPosts = 0;
     if(typeof sessionCache.startOrigin !== 'string') sessionCache.startOrigin = '';
-    if(typeof sessionCache.watchdogFails !== 'number') sessionCache.watchdogFails = 0;
     return sessionCache;
   }
   async function sessionStart(){
@@ -1128,15 +1061,6 @@ let initDoneEarly = false;
     const s = await sessionGet();
     sessionCache.postedByUser = sessionCache.postedByUser || {};
     if(!onCache || !s.active) return;
-    if(sessionCache.detourReturn){
-      window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(2000, 5000);
-      const back = sessionCache.detourReturn;
-      delete sessionCache.detourReturn;
-      await set(STORE_SESSION, sessionCache);
-      location.href = back;
-      return;
-    }
     const cfg = Object.assign({}, DEFAULTS, await loadConf());
     const user = cfg.accounts[cfg.accountIdx]?.user;
 
@@ -1199,7 +1123,9 @@ let initDoneEarly = false;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(3000,7000);
+      await randomScrollWait(2000,6000);
+      await randomScrollWait(2000,4000);
 
       const templates = cfg.templates || [];
       if(!templates.length){
@@ -1267,9 +1193,9 @@ let initDoneEarly = false;
         log(`Switching to ${FORUMS[targetF].name} (weighted target, page 1).`);
         location.href = FORUMS[targetF].list; return;
       }
-      
+
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(1500, 3000);
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
         if(remaining > 0){
@@ -1282,18 +1208,6 @@ let initDoneEarly = false;
         await set(STORE_SESSION, sessionCache);
       }
       const links=collectTopicLinks(user);
-      if(Math.random() < 0.05){
-        const candidates = qa('#forum-main-col a[href*="/profil/"], .liste-sujets a[href*="/profil/"], #forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
-        const misc = candidates.filter(a=>!links.includes(a));
-        const detour = randomPick(misc);
-        if(detour){
-          log(`Random browse → ${(detour.textContent||'').trim().slice(0,80)}`);
-          sessionCache.detourReturn = location.href;
-          await set(STORE_SESSION, sessionCache);
-          detour.setAttribute('target','_self'); detour.click();
-          return;
-        }
-      }
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
       log(`Open topic → ${(pick.textContent||'').trim().slice(0,80)}`);
@@ -1312,26 +1226,23 @@ let initDoneEarly = false;
   }
 
   function collectTopicLinks(user){
-    const all=Array.from(document.querySelectorAll('a[href*="/forums/"][href$=".htm"]'));
-    let nodes=all.filter(a=>a.closest('#forum-main-col')||a.closest('.liste-sujets'));
-    if(nodes.length===0){ console.warn('[collectTopicLinks] nodes empty, all anchors:', all); nodes=all; }
-    console.debug(`[collectTopicLinks] ${nodes.length} links found`);
+    const nodes=qa('#forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
     const out=[], seen=new Set();
     const mine = myPseudo()?.trim().toLowerCase();
     const posted = sessionCache.postedByUser?.[user] || [];
     for(const a of nodes){
       const href=a.getAttribute('href')||'';
-    if(nodes.length===0){ console.warn('[collectTopicLinks] nodes empty, all anchors:', all); nodes=all; }
+      if(/\/messages-prives\//i.test(href)) continue;
       let abs, info;
-      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); console.debug('[collectTopicLinks] invalid URL', href); continue; }
-      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')){ console.debug(`[collectTopicLinks] ${!info?'missing info':'forum not allowed'}`, abs); continue; }
-      if(seen.has(abs)){ console.debug('[collectTopicLinks] already seen', abs); continue; }
-     if(posted.includes(info.topicId)){ console.debug('[collectTopicLinks] already posted', abs); continue; }
+      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); continue; }
+      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')) continue;
+      if(seen.has(abs)) continue;
+     if(posted.includes(info.topicId)) continue;
       if(mine){
         const row=a.closest('tr, li, div');
         const authorEl=row?.querySelector('[data-testid="topic-author"], .topic-author, .topic-author__name, .topic__pseudo');
         const author=authorEl?.textContent?.trim().toLowerCase();
-        if(author && author===mine){ console.debug('[collectTopicLinks] same author', abs); continue; }
+        if(author && author===mine) continue;
       }
 
       seen.add(abs); out.push(a);
@@ -1381,7 +1292,7 @@ let initDoneEarly = false;
   }
 
   async function startHandler(){
-    const c=await loadConf();
+    const c=Object.assign({}, DEFAULTS, await loadConf());
     if (!c.accounts.length || c.accountIdx >= c.accounts.length) {
       log('No accounts configured — session not started.');
       return;
@@ -1512,7 +1423,7 @@ let initDoneEarly = false;
 
     maxInput.addEventListener('change', async ()=>{
       const val=parseInt(maxInput.value,10)||0;
-      const c=await loadConf();
+      const c=Object.assign({}, DEFAULTS, await loadConf());
       c.maxTopicPosts=val;
       await saveConf(c);
       sessionCache.maxTopicPosts=val;
@@ -1640,7 +1551,7 @@ let initDoneEarly = false;
       populateAccList();
       log('Account saved');
     });
-    
+
     let loginWrap=null;
     if(isLoginPage()){
       loginWrap=document.createElement('div');
@@ -1685,12 +1596,12 @@ let initDoneEarly = false;
     if(loginWrap) appendEls.push(loginWrap);
     appendEls.push(chronoWrap,logBox);
     box.append(...appendEls);
-    
+
     const parent=document.body||document.documentElement;
     parent.appendChild(box);
-    
+
     checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
-    
+
     let b=q('#jvc-postwalker-badge');
     if(!b){
       b=document.createElement('div');
