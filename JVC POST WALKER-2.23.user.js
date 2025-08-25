@@ -285,6 +285,7 @@ const STORE_LOGIN_REFUSED='jvc_postwalker_login_refused';
 const STORE_LOGIN_ATTEMPTS='jvc_postwalker_login_attempts';
 const STORE_LOGIN_BLOCKED='jvc_postwalker_login_blocked';
 const STORE_TOPIC_FAILS='jvc_postwalker_topic_fails';
+const STORE_PENDING_POST='jvc_postwalker_pending_post';
 const TOPIC_FAIL_THRESHOLD=3;
 const TOPIC_FAIL_COOLDOWN=5*60*1000;
 
@@ -811,6 +812,8 @@ let initDoneEarly = false;
       const beforeMsgs=qa('.bloc-message-forum').length;
       const prevUrl=location.href;
       const postBtn = q('.postMessage__icon.icon-post-message, .jv-editor-submit, button[data-testid="submit"], .btn-poster-msg, input[type="submit"]');
+      const { topicId: pendingTopicId } = currentTopicInfo();
+      await set(STORE_PENDING_POST, { topicId: pendingTopicId, ts: NOW() });
       await humanHover(postBtn);
       postBtn?.click();
       watchdog = setTimeout(async () => {
@@ -837,6 +840,7 @@ let initDoneEarly = false;
         clearTimeout(watchdog);
         sessionCache.topicCount = (sessionCache.topicCount||0) + 1;
         const { topicId } = currentTopicInfo();
+        await set(STORE_PENDING_POST, null);
         sessionCache.postedTopics = sessionCache.postedTopics || [];
         if(topicId && !sessionCache.postedTopics.includes(topicId)){
           sessionCache.postedTopics.push(topicId);
@@ -1100,6 +1104,22 @@ let initDoneEarly = false;
           location.href = lastList;
           return;
         }
+      }
+      const pending = await get(STORE_PENDING_POST, null);
+      if(pending && pending.topicId === topicId && NOW() - pending.ts <= 30000){
+        await set(STORE_PENDING_POST, null);
+        sessionCache.postedTopics = sessionCache.postedTopics || [];
+        if(topicId && !sessionCache.postedTopics.includes(topicId)){
+          sessionCache.postedTopics.push(topicId);
+        }
+        if(topicId && user){
+          const list = sessionCache.postedByUser[user] ||= [];
+          if(!list.includes(topicId)) list.push(topicId);
+        }
+        await set(STORE_SESSION, sessionCache);
+        const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+        location.href = lastList;
+        return;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
