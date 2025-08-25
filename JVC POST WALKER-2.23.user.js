@@ -292,7 +292,7 @@ const TOPIC_FAIL_COOLDOWN=5*60*1000;
 
 let onCache = false;
 // DM-specific tracking removed: no sent memory or cooldown bookkeeping
-let sessionCache = {active:false,startTs:0,stopTs:0,mpCount:0,mpNextDelay:Math.floor(rnd(2,5)),topicCount:0};
+let sessionCache = {active:false,startTs:0,stopTs:0,mpCount:0,mpNextDelay:Math.floor(rnd(2,5)),topicCount:0,watchdogFails:0};
 let sessionCacheLoaded = false;
 let initDoneEarly = false;
 
@@ -819,7 +819,17 @@ let initDoneEarly = false;
       watchdog = setTimeout(async () => {
         if(location.href === currentUrl){
           log('Watchdog timeout → back to list.');
+          sessionCache.watchdogFails = (sessionCache.watchdogFails || 0) + 1;
+          if(sessionCache.watchdogFails >= 3){
+            sessionCache.cooldownUntil = NOW() + rnd(120000, 180000);
+            sessionCache.watchdogFails = 0;
+          } else {
+            sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
+          }
+          await set(STORE_SESSION, sessionCache);
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
+          await set(STORE_SESSION, sessionCache);
           location.href = lastList;
         }
       }, WATCHDOG_MS);
@@ -839,6 +849,7 @@ let initDoneEarly = false;
       if(success){
         clearTimeout(watchdog);
         sessionCache.topicCount = (sessionCache.topicCount||0) + 1;
+        sessionCache.watchdogFails = 0;
         const { topicId } = currentTopicInfo();
         await set(STORE_PENDING_POST, null);
         sessionCache.postedTopics = sessionCache.postedTopics || [];
@@ -954,6 +965,7 @@ let initDoneEarly = false;
     if(!Array.isArray(sessionCache.templatePool)) sessionCache.templatePool = [];
     if(typeof sessionCache.maxTopicPosts !== 'number') sessionCache.maxTopicPosts = 0;
     if(typeof sessionCache.startOrigin !== 'string') sessionCache.startOrigin = '';
+    if(typeof sessionCache.watchdogFails !== 'number') sessionCache.watchdogFails = 0;
     return sessionCache;
   }
   async function sessionStart(){
@@ -1292,7 +1304,7 @@ let initDoneEarly = false;
   }
 
   async function startHandler(){
-    const c=Object.assign({}, DEFAULTS, await loadConf());
+    const c=await loadConf();
     if (!c.accounts.length || c.accountIdx >= c.accounts.length) {
       log('No accounts configured — session not started.');
       return;
@@ -1423,7 +1435,7 @@ let initDoneEarly = false;
 
     maxInput.addEventListener('change', async ()=>{
       const val=parseInt(maxInput.value,10)||0;
-      const c=Object.assign({}, DEFAULTS, await loadConf());
+      const c=await loadConf();
       c.maxTopicPosts=val;
       await saveConf(c);
       sessionCache.maxTopicPosts=val;
