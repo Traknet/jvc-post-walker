@@ -639,13 +639,13 @@ let initDoneEarly = false;
   }
   async function handleTopicPage(template){
     const currentUrl = location.href;
-    setTimeout(async () => {
+    const watchdog = setTimeout(async () => {
       if(location.href === currentUrl){
         log('Watchdog timeout → back to list.');
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
         location.href = lastList;
       }
-    }, 15000);
+    }, 5000);
     try{
       await sessionGet();
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
@@ -715,7 +715,13 @@ let initDoneEarly = false;
         return 'switch';
       }
       if(success){
+        clearTimeout(watchdog);
         sessionCache.topicCount = (sessionCache.topicCount||0) + 1;
+        const { topicId } = currentTopicInfo();
+        sessionCache.postedTopics = sessionCache.postedTopics || [];
+        if(topicId && !sessionCache.postedTopics.includes(topicId)){
+          sessionCache.postedTopics.push(topicId);
+        }
         await set(STORE_SESSION, sessionCache);
         if (await reachedDailyLimitAsync()) {
           log('Daily limit reached → switching account.');
@@ -727,6 +733,8 @@ let initDoneEarly = false;
           await switchAccount();
           return 'switch';
         }
+        const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+        window.location.assign(lastList);
         return 'posted';
       }
       return false;
@@ -973,20 +981,21 @@ let initDoneEarly = false;
       }
       await sessionGet();
       if(!Array.isArray(sessionCache.templatePool) || !sessionCache.templatePool.length){
-        sessionCache.templatePool = shuffle([...templates]);
-      }
-      const tpl = sessionCache.templatePool.pop();
-      const result = await handleTopicPage(tpl);
-      if(result === 'posted'){
-        sessionCache.postedTopics.push(topicId);
-        sessionCache.templatePool = shuffle([...templates]);
-        await set(STORE_SESSION, sessionCache);
-        if(failed[topicId]){ delete failed[topicId]; await set(STORE_TOPIC_FAILS, failed); }
-        await updateSessionUI();
-        const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        location.href = lastList;
-        return;
-      }
+          sessionCache.templatePool = shuffle([...templates]);
+        }
+        const tpl = sessionCache.templatePool.pop();
+        const topicUrlBefore = location.href;
+        const result = await handleTopicPage(tpl);
+        if(result === 'posted'){
+          sessionCache.templatePool = shuffle([...templates]);
+          await set(STORE_SESSION, sessionCache);
+          if(failed[topicId]){ delete failed[topicId]; await set(STORE_TOPIC_FAILS, failed); }
+          await updateSessionUI();
+          setTimeout(() => {
+            if(location.href === topicUrlBefore) location.href = lastList;
+          }, 3000);
+          return;
+        }
       if(result !== 'switch'){
         const entry = failed[topicId] || {count:0, until:0};
         entry.count++;
