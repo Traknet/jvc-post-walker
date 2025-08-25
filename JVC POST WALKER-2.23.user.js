@@ -755,6 +755,7 @@ let initDoneEarly = false;
   async function handleTopicPage(template){
     const currentUrl = location.href;
     let watchdog;
+    const WATCHDOG_MS = 26000;
     try{
       await sessionGet();
       sessionCache.postedByUser = sessionCache.postedByUser || {};
@@ -818,9 +819,9 @@ let initDoneEarly = false;
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
           location.href = lastList;
         }
-      }, 26000);
+      }, WATCHDOG_MS);
       let ok=false;
-      const end=NOW()+10000;
+      const end=NOW()+WATCHDOG_MS;
       while(NOW()<end){
         await sleep(300);
         if(location.href!==prevUrl || qa('.bloc-message-forum').length>beforeMsgs){ ok=true; break; }
