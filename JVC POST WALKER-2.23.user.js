@@ -282,10 +282,10 @@ const STORE_LAST_LIST='jvc_postwalker_last_list';
 const STORE_PENDING_LOGIN='jvc_postwalker_pending_login';
 const STORE_CF_RETRIES='jvc_postwalker_cf_retries';
 const STORE_LOGIN_REFUSED='jvc_postwalker_login_refused';
+const STORE_LOGIN_ATTEMPTS='jvc_postwalker_login_attempts';
 const STORE_TOPIC_FAILS='jvc_postwalker_topic_fails';
 const TOPIC_FAIL_THRESHOLD=3;
 const TOPIC_FAIL_COOLDOWN=5*60*1000;
-const LOGIN_REFUSED_COOLDOWN=5*60*1000;
 
 
 let onCache = false;
@@ -379,8 +379,8 @@ let initDoneEarly = false;
   async function autoLogin(){
     if(loginAttempted) return;
     loginAttempted=true;
-    const lastRefused = await get(STORE_LOGIN_REFUSED,0);
-    const remaining = LOGIN_REFUSED_COOLDOWN - (NOW()-lastRefused);
+    const blockUntil = await get(STORE_LOGIN_REFUSED,0);
+    const remaining = blockUntil - NOW();
     if(remaining>0){
       console.warn('autoLogin: login recently refused');
       clearTimeout(loginReloadTimeout);
@@ -451,24 +451,32 @@ let initDoneEarly = false;
         }
         const errEl=q('.alert--error, .alert.alert-danger, .msg-error, .alert-warning');
         if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
-          await set(STORE_LOGIN_REFUSED,NOW());
+          const attempts=(await get(STORE_LOGIN_ATTEMPTS,0))+1;
+          await set(STORE_LOGIN_ATTEMPTS,attempts);
+          const delay=attempts===1 ? rnd(10*60*1000,11*60*1000) : rnd(5*60*1000,6*60*1000);
+          await set(STORE_LOGIN_REFUSED,NOW()+delay);
           clearTimeout(loginReloadTimeout);
-          loginReloadTimeout=setTimeout(()=>location.reload(),LOGIN_REFUSED_COOLDOWN);
+          loginReloadTimeout=setTimeout(()=>location.reload(),delay);
           console.warn('autoLogin: login refused, delaying retries');
           return;
         }
       }
       const errEl=q('.alert--error, .alert.alert-danger, .msg-error, .alert-warning');
       if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
-        await set(STORE_LOGIN_REFUSED,NOW());
+        const attempts=(await get(STORE_LOGIN_ATTEMPTS,0))+1;
+        await set(STORE_LOGIN_ATTEMPTS,attempts);
+        const delay=attempts===1 ? rnd(10*60*1000,11*60*1000) : rnd(5*60*1000,6*60*1000);
+        await set(STORE_LOGIN_REFUSED,NOW()+delay);
         clearTimeout(loginReloadTimeout);
-        loginReloadTimeout=setTimeout(()=>location.reload(),LOGIN_REFUSED_COOLDOWN);
+        loginReloadTimeout=setTimeout(()=>location.reload(),delay);
         console.warn('autoLogin: login refused, delaying retries');
         return;
       }
       if(/login/i.test(location.pathname)){
         clearTimeout(loginReloadTimeout);
         loginReloadTimeout=setTimeout(()=>location.reload(),0);
+      }else{
+        await set(STORE_LOGIN_ATTEMPTS,0);
       }
     }catch(err){
       console.error('autoLogin: submission failed', err);
@@ -503,6 +511,8 @@ let initDoneEarly = false;
 
     if (isLoginPage()) {
       if (onCache) await autoLogin();
+    } else {
+      await set(STORE_LOGIN_ATTEMPTS,0);
     }
 
     try {
@@ -1256,6 +1266,30 @@ let initDoneEarly = false;
 
   async function ensureUI(){
     if(q('#jvc-postwalker')) return;
+
+    let libsOk = true;
+    try{
+      await Promise.all([
+        fetch('https://cdn.lib.getjan.io/library/jv.js', {method:'HEAD'}),
+        fetch('https://cdn.lib.getjad.io/library/120157152/jeuxvideo_com_fr_web', {method:'HEAD'})
+      ]);
+    }catch(e){
+      libsOk = false;
+    }
+    if(!libsOk){
+      console.warn('[Post Walker] Required libraries unreachable. Check blockers/firewall.');
+      if(!q('#jvc-postwalker-libwarn')){
+        const warn=document.createElement('div');
+        warn.id='jvc-postwalker-libwarn';
+        warn.textContent='Post Walker: required libraries blocked? Check blockers or firewall.';
+        Object.assign(warn.style,{
+          position:'fixed',top:'0',left:'0',right:'0',
+          background:'#fdd',color:'#900',padding:'4px',textAlign:'center',
+          zIndex:2147483647
+        });
+        document.body.appendChild(warn);
+      }
+    }
 
     await ensureDefaults();
     const conf = Object.assign({}, DEFAULTS, await loadConf());
