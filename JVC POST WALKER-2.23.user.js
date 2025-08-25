@@ -643,7 +643,9 @@ let initDoneEarly = false;
     let watchdog;
     try{
       await sessionGet();
+      sessionCache.postedByUser = sessionCache.postedByUser || {};
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
+      const user = cfg.accounts[cfg.accountIdx]?.user;
       const limit = sessionCache.maxTopicPosts || cfg.maxTopicPosts;
       if(limit && sessionCache.topicCount >= limit){
         log('Post limit reached → switching account.');
@@ -702,7 +704,7 @@ let initDoneEarly = false;
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
           location.href = lastList;
         }
-      }, 8000);
+      }, 13000);
       let ok=false;
       const end=NOW()+10000;
       while(NOW()<end){
@@ -723,6 +725,10 @@ let initDoneEarly = false;
         sessionCache.postedTopics = sessionCache.postedTopics || [];
         if(topicId && !sessionCache.postedTopics.includes(topicId)){
           sessionCache.postedTopics.push(topicId);
+        }
+        if(topicId && user){
+          const list = sessionCache.postedByUser[user] ||= [];
+          if(!list.includes(topicId)) list.push(topicId);
         }
         sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
         await set(STORE_SESSION, sessionCache);
@@ -934,8 +940,10 @@ let initDoneEarly = false;
     ticking = true;
     try {
     const s = await sessionGet();
+    sessionCache.postedByUser = sessionCache.postedByUser || {};
     if(!onCache || !s.active) return;
     const cfg = Object.assign({}, DEFAULTS, await loadConf());
+    const user = cfg.accounts[cfg.accountIdx]?.user;
 
     // 1) enforce forum scope with weighted target
     if(!pageIsAllowed()){
@@ -950,6 +958,15 @@ let initDoneEarly = false;
       const {forumId, topicId}=currentTopicInfo();
       if(!ALLOWED_FORUMS.has(forumId)){ const fid = pickForumIdWeighted(); await setTargetForum(fid); location.href=FORUMS[fid].list; return; }
       await sessionGet();
+      sessionCache.postedByUser = sessionCache.postedByUser || {};
+      if(topicId){
+        const list = sessionCache.postedByUser[user] || [];
+        if(list.includes(topicId)){
+          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          location.href = lastList;
+          return;
+        }
+      }
       const failed = await get(STORE_TOPIC_FAILS, {});
       if(topicId){
         const f = failed[topicId];
@@ -983,6 +1000,7 @@ let initDoneEarly = false;
         return;
       }
       await sessionGet();
+      sessionCache.postedByUser = sessionCache.postedByUser || {};
       if(!Array.isArray(sessionCache.templatePool) || !sessionCache.templatePool.length){
           sessionCache.templatePool = shuffle([...templates]);
         }
@@ -1048,12 +1066,13 @@ let initDoneEarly = false;
         if(remaining > 0){
           await randomScrollWait(remaining, remaining + 5000);
           await sessionGet();
+          sessionCache.postedByUser = sessionCache.postedByUser || {};
           tickSoon(400); return;
         }
         delete sessionCache.cooldownUntil;
         await set(STORE_SESSION, sessionCache);
       }
-      const links=collectTopicLinks();
+      const links=collectTopicLinks(user);
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
       log(`Open topic → ${(pick.textContent||'').trim().slice(0,80)}`);
@@ -1071,10 +1090,11 @@ let initDoneEarly = false;
 
   }
 
-  function collectTopicLinks(){
+  function collectTopicLinks(user){
     const nodes=qa('#forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
     const out=[], seen=new Set();
     const mine = myPseudo()?.trim().toLowerCase();
+    const posted = sessionCache.postedByUser?.[user] || [];
     for(const a of nodes){
       const href=a.getAttribute('href')||'';
       if(/\/messages-prives\//i.test(href)) continue;
@@ -1082,6 +1102,7 @@ let initDoneEarly = false;
       try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); continue; }
       if(!info || !ALLOWED_FORUMS.has(info.forumId||'')) continue;
       if(seen.has(abs)) continue;
+     if(posted.includes(info.topicId)) continue;
       if(mine){
         const row=a.closest('tr, li, div');
         const authorEl=row?.querySelector('[data-testid="topic-author"], .topic-author, .topic-author__name, .topic__pseudo');
