@@ -283,6 +283,7 @@ const STORE_PENDING_LOGIN='jvc_postwalker_pending_login';
 const STORE_CF_RETRIES='jvc_postwalker_cf_retries';
 const STORE_LOGIN_REFUSED='jvc_postwalker_login_refused';
 const STORE_LOGIN_ATTEMPTS='jvc_postwalker_login_attempts';
+const STORE_LOGIN_BLOCKED='jvc_postwalker_login_blocked';
 const STORE_TOPIC_FAILS='jvc_postwalker_topic_fails';
 const TOPIC_FAIL_THRESHOLD=3;
 const TOPIC_FAIL_COOLDOWN=5*60*1000;
@@ -355,10 +356,22 @@ let initDoneEarly = false;
       if(!hasScript) ok=false;
     }
     if(!ok && box){
-      const warn=document.createElement('div');
-      warn.textContent='désactivez votre bloqueur pour permettre le chargement des scripts';
-      Object.assign(warn.style,{color:'#f55',marginTop:'6px',fontWeight:'bold'});
-      box.appendChild(warn);
+      console.warn('[Post Walker] Required libraries unreachable. Check blockers/firewall.');
+      if(!q('#jvc-postwalker-libwarn')){
+        const warn=document.createElement('div');
+        warn.id='jvc-postwalker-libwarn';
+        warn.textContent='Post Walker: required libraries blocked? Check blockers or firewall.';
+        Object.assign(warn.style,{
+          position:'fixed',top:'0',left:'0',right:'0',
+          background:'#fdd',color:'#900',padding:'4px',textAlign:'center',
+          zIndex:2147483647
+        });
+        document.body.appendChild(warn);
+      }
+      const uiWarn=document.createElement('div');
+      uiWarn.textContent='Accès aux librairies getjan.io/getjad.io impossible. Certaines fonctionnalités peuvent ne pas marcher.';
+      Object.assign(uiWarn.style,{color:'#f55',marginTop:'6px',fontWeight:'bold'});
+      box.appendChild(uiWarn);
     }
   }
 
@@ -379,6 +392,11 @@ let initDoneEarly = false;
   async function autoLogin(){
     if(loginAttempted) return;
     loginAttempted=true;
+    const blocked = await get(STORE_LOGIN_BLOCKED,false);
+    if(blocked){
+      console.warn('autoLogin: blocked after repeated failures');
+      return;
+    }
     const blockUntil = await get(STORE_LOGIN_REFUSED,0);
     const remaining = blockUntil - NOW();
     if(remaining>0){
@@ -436,9 +454,24 @@ let initDoneEarly = false;
         console.warn('autoLogin: no submission mechanism found');
       }
       const deadline = NOW() + 15000;
+      let sandboxCount = 0;
+      let sandboxSeen = 0;
       while(NOW() < deadline && /login/i.test(location.pathname)){
         await sleep(250);
-        if(hasCloudflareCaptcha()){
+        const cf=q('#cf-challenge, .cf-turnstile');
+        const currentSandbox=qa('iframe[sandbox]').length;
+        if(!cf && currentSandbox > sandboxCount){
+          sandboxCount = currentSandbox;
+          sandboxSeen++;
+          if(sandboxSeen >= 3){
+            clearTimeout(loginReloadTimeout);
+            loginReloadTimeout=null;
+            alert('autoLogin: Cloudflare challenge impossible, intervention requise');
+            console.warn('autoLogin: Cloudflare challenge blocked');
+            return;
+          }
+        }
+        if(cf){
           const retries = await get(STORE_CF_RETRIES,0);
           if(retries>=3){
             console.warn('autoLogin: Cloudflare challenge limit reached');
@@ -446,18 +479,26 @@ let initDoneEarly = false;
             await set(STORE_CF_RETRIES,retries+1);
             await dwell();
             clearTimeout(loginReloadTimeout);
-            loginReloadTimeout=setTimeout(()=>location.reload(),0);          }
+            loginReloadTimeout=setTimeout(()=>location.reload(),0);
+          }
           return;
         }
         const errEl=q('.alert--error, .alert.alert-danger, .msg-error, .alert-warning');
         if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
           const attempts=(await get(STORE_LOGIN_ATTEMPTS,0))+1;
           await set(STORE_LOGIN_ATTEMPTS,attempts);
-          const delay=attempts===1 ? rnd(10*60*1000,11*60*1000) : rnd(5*60*1000,6*60*1000);
+          if(attempts>=2){
+            await set(STORE_LOGIN_BLOCKED,true);
+            await set(STORE_LOGIN_REFUSED,0);
+            clearTimeout(loginReloadTimeout);
+            console.warn('autoLogin: login refused, blocking auto retries');
+            return;
+          }
+          const delay=rnd(10*60*1000,11*60*1000);
           await set(STORE_LOGIN_REFUSED,NOW()+delay);
           clearTimeout(loginReloadTimeout);
           loginReloadTimeout=setTimeout(()=>location.reload(),delay);
-          console.warn('autoLogin: login refused, delaying retries');
+          console.warn('autoLogin: login refused, delaying retry');
           return;
         }
       }
@@ -465,20 +506,35 @@ let initDoneEarly = false;
       if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
         const attempts=(await get(STORE_LOGIN_ATTEMPTS,0))+1;
         await set(STORE_LOGIN_ATTEMPTS,attempts);
+        if(attempts>=2){
+          await set(STORE_LOGIN_BLOCKED,true);
+          await set(STORE_LOGIN_REFUSED,0);
+          clearTimeout(loginReloadTimeout);
+          console.warn('autoLogin: login refused, blocking auto retries');
+          return;
+        }
+        const delay=rnd(10*60*1000,11*60*1000);
+        await set(STORE_LOGIN_REFUSED,NOW()+delay);
+        clearTimeout(loginReloadTimeout);
+        loginReloadTimeout=setTimeout(()=>location.reload(),delay);
+        console.warn('autoLogin: login refused, delaying retry');
+        return;
+      }
+      if(/login/i.test(location.pathname) && !errEl){
+        const attempts=(await get(STORE_LOGIN_ATTEMPTS,0))+1;
+        await set(STORE_LOGIN_ATTEMPTS,attempts);
         const delay=attempts===1 ? rnd(10*60*1000,11*60*1000) : rnd(5*60*1000,6*60*1000);
         await set(STORE_LOGIN_REFUSED,NOW()+delay);
         clearTimeout(loginReloadTimeout);
         loginReloadTimeout=setTimeout(()=>location.reload(),delay);
-        console.warn('autoLogin: login refused, delaying retries');
+        console.warn('autoLogin: login page unchanged, delaying retries');
         return;
       }
-      if(/login/i.test(location.pathname)){
-        clearTimeout(loginReloadTimeout);
-        loginReloadTimeout=setTimeout(()=>location.reload(),0);
-      }else{
-        await set(STORE_LOGIN_ATTEMPTS,0);
+      await set(STORE_LOGIN_ATTEMPTS,0);
+      await set(STORE_LOGIN_BLOCKED,false);
+      await set(STORE_LOGIN_REFUSED,0);
       }
-    }catch(err){
+    catch(err){
       console.error('autoLogin: submission failed', err);
     }
   }
@@ -510,9 +566,11 @@ let initDoneEarly = false;
     function pickListWeighted(){ const fid=pickForumIdWeighted(); return FORUMS[fid].list; }
 
     if (isLoginPage()) {
-      if (onCache) await autoLogin();
+    if (onCache && !(await get(STORE_LOGIN_BLOCKED,false))) await autoLogin();
     } else {
       await set(STORE_LOGIN_ATTEMPTS,0);
+      await set(STORE_LOGIN_BLOCKED,false);
+      await set(STORE_LOGIN_REFUSED,0);
     }
 
     try {
@@ -1266,31 +1324,6 @@ let initDoneEarly = false;
 
   async function ensureUI(){
     if(q('#jvc-postwalker')) return;
-
-    let libsOk = true;
-    try{
-      await Promise.all([
-        fetch('https://cdn.lib.getjan.io/library/jv.js', {method:'HEAD'}),
-        fetch('https://cdn.lib.getjad.io/library/120157152/jeuxvideo_com_fr_web', {method:'HEAD'})
-      ]);
-    }catch(e){
-      libsOk = false;
-    }
-    if(!libsOk){
-      console.warn('[Post Walker] Required libraries unreachable. Check blockers/firewall.');
-      if(!q('#jvc-postwalker-libwarn')){
-        const warn=document.createElement('div');
-        warn.id='jvc-postwalker-libwarn';
-        warn.textContent='Post Walker: required libraries blocked? Check blockers or firewall.';
-        Object.assign(warn.style,{
-          position:'fixed',top:'0',left:'0',right:'0',
-          background:'#fdd',color:'#900',padding:'4px',textAlign:'center',
-          zIndex:2147483647
-        });
-        document.body.appendChild(warn);
-      }
-    }
-
     await ensureDefaults();
     const conf = Object.assign({}, DEFAULTS, await loadConf());
     if(!conf.me){ conf.me = myPseudo(); await saveConf(conf); }
@@ -1497,6 +1530,23 @@ let initDoneEarly = false;
       populateAccList();
       log('Account saved');
     });
+    
+    let loginWrap=null;
+    if(isLoginPage()){
+      loginWrap=document.createElement('div');
+      Object.assign(loginWrap.style,{display:'flex',alignItems:'center',gap:'4px',margin:'6px 0'});
+      const retryBtn=document.createElement('button');
+      retryBtn.textContent='Retry login';
+      Object.assign(retryBtn.style,{background:'#2a6ef5',border:'0',color:'#fff',padding:'2px 6px',borderRadius:'6px',cursor:'pointer'});
+      retryBtn.addEventListener('click',async ()=>{
+        await set(STORE_LOGIN_ATTEMPTS,0);
+        await set(STORE_LOGIN_BLOCKED,false);
+        await set(STORE_LOGIN_REFUSED,0);
+        loginAttempted=false;
+        await autoLogin();
+      });
+      loginWrap.append(retryBtn);
+    }
 
     const chronoWrap=document.createElement('div');
     Object.assign(chronoWrap.style,{display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px',fontVariantNumeric:'tabular-nums'});
@@ -1521,8 +1571,11 @@ let initDoneEarly = false;
     });
     logEl=logBox;
 
-    box.append(header,actions,hoursWrap,maxWrap,accountWrap,accountMgr,chronoWrap,logBox);
-
+    const appendEls=[header,actions,hoursWrap,maxWrap,accountWrap,accountMgr];
+    if(loginWrap) appendEls.push(loginWrap);
+    appendEls.push(chronoWrap,logBox);
+    box.append(...appendEls);
+    
     const parent=document.body||document.documentElement;
     parent.appendChild(box);
     
