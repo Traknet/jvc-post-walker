@@ -1038,7 +1038,9 @@ let initDoneEarly = false;
         log(`Switching to ${FORUMS[targetF].name} (weighted target, page 1).`);
         location.href = FORUMS[targetF].list; return;
       }
-
+      
+      window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
+      await randomScrollWait(1500, 3000);
       const links=collectTopicLinks();
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
