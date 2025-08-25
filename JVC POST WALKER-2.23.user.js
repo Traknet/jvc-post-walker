@@ -250,8 +250,8 @@
     return true;
   }
   function isLoginPage(){
-    return /connexion|login/i.test(location.pathname);
-  }
+  const path = location.pathname;
+  return path.startsWith('/login');  }
 
 const STORE_CONF='jvc_postwalker_conf';
   let confCache = null;
@@ -281,6 +281,9 @@ const STORE_TARGET_FORUM='jvc_postwalker_target_forum';
 const STORE_LAST_LIST='jvc_postwalker_last_list';
 const STORE_PENDING_LOGIN='jvc_postwalker_pending_login';
 const STORE_CF_RETRIES='jvc_postwalker_cf_retries';
+const STORE_TOPIC_FAILS='jvc_postwalker_topic_fails';
+const TOPIC_FAIL_THRESHOLD=3;
+const TOPIC_FAIL_COOLDOWN=5*60*1000;
 
 
 let onCache = false;
@@ -453,10 +456,12 @@ let initDoneEarly = false;
 
     if (isLoginPage()) {
       if (onCache) await autoLogin();
-      return;
     }
 
-    try { await buildAndAutoStart(); initDoneEarly = true; }
+    try {
+      await buildAndAutoStart();
+      initDoneEarly = true;
+    }
     catch(err){ console.error('[Post Walker] init failed', err); }
 
   async function setTargetForum(fid){ await set(STORE_TARGET_FORUM, {fid, ts:NOW()}); }
@@ -934,10 +939,24 @@ let initDoneEarly = false;
       const {forumId, topicId}=currentTopicInfo();
       if(!ALLOWED_FORUMS.has(forumId)){ const fid = pickForumIdWeighted(); await setTargetForum(fid); location.href=FORUMS[fid].list; return; }
       await sessionGet();
-      if(topicId && sessionCache.postedTopics.includes(topicId)){
-        const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        location.href = lastList;
-        return;
+      const failed = await get(STORE_TOPIC_FAILS, {});
+      if(topicId){
+        const f = failed[topicId];
+        if(f && f.until && NOW() < f.until){
+          log('Topic temporarily blacklisted → back to list.');
+          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          location.href = lastList;
+          return;
+        }
+        if(f && f.until && NOW() >= f.until){
+          delete failed[topicId];
+          await set(STORE_TOPIC_FAILS, failed);
+        }
+        if(sessionCache.postedTopics.includes(topicId)){
+          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          location.href = lastList;
+          return;
+        }
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
@@ -957,18 +976,27 @@ let initDoneEarly = false;
         sessionCache.templatePool = shuffle([...templates]);
       }
       const tpl = sessionCache.templatePool.pop();
-      sessionCache.postedTopics.push(topicId);
-      await set(STORE_SESSION, sessionCache);
       const result = await handleTopicPage(tpl);
       if(result === 'posted'){
+        sessionCache.postedTopics.push(topicId);
         sessionCache.templatePool = shuffle([...templates]);
         await set(STORE_SESSION, sessionCache);
+        if(failed[topicId]){ delete failed[topicId]; await set(STORE_TOPIC_FAILS, failed); }
         await updateSessionUI();
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
         location.href = lastList;
         return;
       }
-            sessionCache.postedTopics = sessionCache.postedTopics.filter(id => id !== topicId);
+      if(result !== 'switch'){
+        const entry = failed[topicId] || {count:0, until:0};
+        entry.count++;
+        if(entry.count >= TOPIC_FAIL_THRESHOLD){
+          entry.count = 0;
+          entry.until = NOW() + TOPIC_FAIL_COOLDOWN;
+        }
+        failed[topicId] = entry;
+        await set(STORE_TOPIC_FAILS, failed);
+      }
       if(result === 'switch'){
         sessionCache.templatePool = shuffle([...templates]);
         await set(STORE_SESSION, sessionCache);
