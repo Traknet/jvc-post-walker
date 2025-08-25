@@ -1314,24 +1314,24 @@ let initDoneEarly = false;
   function collectTopicLinks(user){
     const all=Array.from(document.querySelectorAll('a[href*="/forums/"][href$=".htm"]'));
     let nodes=all.filter(a=>a.closest('#forum-main-col')||a.closest('.liste-sujets'));
-    if(nodes.length===0) nodes=all;
+    if(nodes.length===0){ console.warn('[collectTopicLinks] nodes empty, all anchors:', all); nodes=all; }
     console.debug(`[collectTopicLinks] ${nodes.length} links found`);
     const out=[], seen=new Set();
     const mine = myPseudo()?.trim().toLowerCase();
     const posted = sessionCache.postedByUser?.[user] || [];
     for(const a of nodes){
       const href=a.getAttribute('href')||'';
-      if(/\/messages-prives\//i.test(href)) continue;
+    if(nodes.length===0){ console.warn('[collectTopicLinks] nodes empty, all anchors:', all); nodes=all; }
       let abs, info;
-      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); continue; }
-      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')) continue;
-      if(seen.has(abs)) continue;
-     if(posted.includes(info.topicId)) continue;
+      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); console.debug('[collectTopicLinks] invalid URL', href); continue; }
+      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')){ console.debug(`[collectTopicLinks] ${!info?'missing info':'forum not allowed'}`, abs); continue; }
+      if(seen.has(abs)){ console.debug('[collectTopicLinks] already seen', abs); continue; }
+     if(posted.includes(info.topicId)){ console.debug('[collectTopicLinks] already posted', abs); continue; }
       if(mine){
         const row=a.closest('tr, li, div');
         const authorEl=row?.querySelector('[data-testid="topic-author"], .topic-author, .topic-author__name, .topic__pseudo');
         const author=authorEl?.textContent?.trim().toLowerCase();
-        if(author && author===mine) continue;
+        if(author && author===mine){ console.debug('[collectTopicLinks] same author', abs); continue; }
       }
 
       seen.add(abs); out.push(a);
