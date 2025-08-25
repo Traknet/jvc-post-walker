@@ -381,6 +381,7 @@ let initDoneEarly = false;
     if(pseudoEl.value !== account.user || passEl.value !== account.pass){
       setValue(pseudoEl, '');
       setValue(passEl, '');
+      await dwell(2000, 3000);
       await typeHuman(pseudoEl, account.user);
       await typeHuman(passEl, account.pass);
     }
