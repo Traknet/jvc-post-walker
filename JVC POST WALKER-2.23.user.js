@@ -724,6 +724,7 @@ let initDoneEarly = false;
         if(topicId && !sessionCache.postedTopics.includes(topicId)){
           sessionCache.postedTopics.push(topicId);
         }
+        sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
         await set(STORE_SESSION, sessionCache);
         if (await reachedDailyLimitAsync()) {
           log('Daily limit reached → switching account.');
@@ -1042,6 +1043,16 @@ let initDoneEarly = false;
       
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
       await randomScrollWait(1500, 3000);
+      if(sessionCache.cooldownUntil){
+        const remaining = sessionCache.cooldownUntil - NOW();
+        if(remaining > 0){
+          await randomScrollWait(remaining, remaining + 5000);
+          await sessionGet();
+          tickSoon(400); return;
+        }
+        delete sessionCache.cooldownUntil;
+        await set(STORE_SESSION, sessionCache);
+      }
       const links=collectTopicLinks();
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
