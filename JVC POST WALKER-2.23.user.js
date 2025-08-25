@@ -281,9 +281,11 @@ const STORE_TARGET_FORUM='jvc_postwalker_target_forum';
 const STORE_LAST_LIST='jvc_postwalker_last_list';
 const STORE_PENDING_LOGIN='jvc_postwalker_pending_login';
 const STORE_CF_RETRIES='jvc_postwalker_cf_retries';
+const STORE_LOGIN_REFUSED='jvc_postwalker_login_refused';
 const STORE_TOPIC_FAILS='jvc_postwalker_topic_fails';
 const TOPIC_FAIL_THRESHOLD=3;
 const TOPIC_FAIL_COOLDOWN=5*60*1000;
+const LOGIN_REFUSED_COOLDOWN=5*60*1000;
 
 
 let onCache = false;
@@ -339,6 +341,26 @@ let initDoneEarly = false;
     }
     if(changed) await saveConf(cfg);
   }
+  
+  async function checkCdnResources(box){
+    const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
+    let ok=true;
+    for(const d of domains){
+      const hasScript=!!document.querySelector(`script[src*="${d}"]`);
+      try{
+        await fetch(`https://${d}/`,{mode:'no-cors'});
+      }catch(e){
+        ok=false;
+      }
+      if(!hasScript) ok=false;
+    }
+    if(!ok && box){
+      const warn=document.createElement('div');
+      warn.textContent='désactivez votre bloqueur pour permettre le chargement des scripts';
+      Object.assign(warn.style,{color:'#f55',marginTop:'6px',fontWeight:'bold'});
+      box.appendChild(warn);
+    }
+  }
 
     /**
    * Fill and submit the login form on jeuxvideo.com using the currently
@@ -357,6 +379,14 @@ let initDoneEarly = false;
   async function autoLogin(){
     if(loginAttempted) return;
     loginAttempted=true;
+    const lastRefused = await get(STORE_LOGIN_REFUSED,0);
+    const remaining = LOGIN_REFUSED_COOLDOWN - (NOW()-lastRefused);
+    if(remaining>0){
+      console.warn('autoLogin: login recently refused');
+      clearTimeout(loginReloadTimeout);
+      loginReloadTimeout=setTimeout(()=>location.reload(),remaining);
+      return;
+    }
     // clear any pending reload attempts from previous runs
     if(loginReloadTimeout){ clearTimeout(loginReloadTimeout); loginReloadTimeout=null; }
     if(hasCloudflareCaptcha()){
@@ -419,6 +449,22 @@ let initDoneEarly = false;
             loginReloadTimeout=setTimeout(()=>location.reload(),0);          }
           return;
         }
+        const errEl=q('.alert--error, .alert.alert-danger, .msg-error, .alert-warning');
+        if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
+          await set(STORE_LOGIN_REFUSED,NOW());
+          clearTimeout(loginReloadTimeout);
+          loginReloadTimeout=setTimeout(()=>location.reload(),LOGIN_REFUSED_COOLDOWN);
+          console.warn('autoLogin: login refused, delaying retries');
+          return;
+        }
+      }
+      const errEl=q('.alert--error, .alert.alert-danger, .msg-error, .alert-warning');
+      if(errEl && /Votre tentative de connexion a été refusée/i.test(errEl.textContent)){
+        await set(STORE_LOGIN_REFUSED,NOW());
+        clearTimeout(loginReloadTimeout);
+        loginReloadTimeout=setTimeout(()=>location.reload(),LOGIN_REFUSED_COOLDOWN);
+        console.warn('autoLogin: login refused, delaying retries');
+        return;
       }
       if(/login/i.test(location.pathname)){
         clearTimeout(loginReloadTimeout);
@@ -1445,7 +1491,9 @@ let initDoneEarly = false;
 
     const parent=document.body||document.documentElement;
     parent.appendChild(box);
-
+    
+    checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
+    
     let b=q('#jvc-postwalker-badge');
     if(!b){
       b=document.createElement('div');
