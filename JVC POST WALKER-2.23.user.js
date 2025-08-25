@@ -80,6 +80,17 @@
       await dwell(400,1200);
     }
   }
+  
+  function estimateReadingTime(element){
+    if(!element) return 0;
+    const text = element.innerText || '';
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    const paragraphs = element.querySelectorAll('p').length;
+    const wordsPerMinute = 200;
+    const base = words / wordsPerMinute * 60 * 1000;
+    const extra = paragraphs * 400;
+    return Math.round(base + extra);
+  }
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const NOW=()=>Date.now();
@@ -91,6 +102,15 @@
   // track any pending login retry to avoid duplicate reloads
   let loginReloadTimeout=null;
   let loginAttempted=false;
+
+  let cursorX = (typeof window !== 'undefined' ? window.innerWidth/2 : 0);
+  let cursorY = (typeof window !== 'undefined' ? window.innerHeight/2 : 0);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('mousemove', e => {
+      cursorX = e.clientX;
+      cursorY = e.clientY;
+    }, {passive:true});
+  }
 
   const logBuffer=[]; let logIdx=0; const log=(s)=>{
     logBuffer[logIdx++ % 200] = s;
@@ -146,29 +166,47 @@
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
     const conf = await getFullConf();
-    for(const ch of txt){
-      if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
-        const typo = rndChar();
-        await appendQuick(el, typo);
-        await sleep(rnd(80,160));
-        const corrected = getValue(el).slice(0,-1);
-        setValue(el, corrected);
-        el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
+    const WORD_PASTE_PROB = 0.1;
+    const logDelay = () => {
+      const u1 = Math.random();
+      const u2 = Math.random();
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      return Math.round(Math.exp(4.2 + 0.4 * z));
+    };
+    for(let i=0;i<txt.length;i++){
+      let ch = txt[i];
+      if(!conf.debug && !conf.dryRun && /\S/.test(ch) && (i===0 || /\s/.test(txt[i-1])) && Math.random() < WORD_PASTE_PROB){
+        const match = txt.slice(i).match(/^\S+/);
+        if(match){
+          await appendQuick(el, match[0]);
+          ch = match[0].slice(-1);
+          i += match[0].length - 1;
+        }
+      }else{
+        if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
+          const typo = rndChar();
+          await appendQuick(el, typo);
+          await sleep(rnd(80,160));
+          const corrected = getValue(el).slice(0,-1);
+          setValue(el, corrected);
+          el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
+        }
+        const prev=(el.value??el.textContent??'');
+        if(el.isContentEditable){ el.textContent = prev + ch; }
+        else setVal(el, prev + ch);
+        el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
+        el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
+        el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
+        await sleep(logDelay());
+        if(Math.random()<0.03){
+          try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
+          catch(e){ console.error('[typeHuman scroll]', e); }
+          await sleep(logDelay());
+        }
       }
-      const prev=(el.value??el.textContent??'');
-      if(el.isContentEditable){ el.textContent = prev + ch; }
-      else setVal(el, prev + ch);
-      el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
-      el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
-      el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
-      await human();
-      if(Math.random()<0.03){
-        try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
-        catch(e){ console.error('[typeHuman scroll]', e); }
-        await human();
-      }
+        if(/[\s.,!?;:]/.test(ch)) await sleep(Math.round(rnd(200,400)));
     }
-    await human();
+    await sleep(logDelay());
   }
 
   // “Paste URLs, type everything else” for message field
@@ -233,6 +271,23 @@
         el.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:cx+rnd(-15,15),clientY:cy+rnd(-8,8)}));
         await sleep(40+Math.random()*90);
       }
+      const startX = cursorX;
+      const startY = cursorY;
+      const steps = 8 + Math.floor(Math.random()*8);
+      await new Promise(res => {
+        let step = 0;
+        function animate(){
+          step++;
+          const t = step/steps;
+          const x = startX + (cx - startX)*t + rnd(-2,2);
+          const y = startY + (cy - startY)*t + rnd(-2,2);
+          document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
+          cursorX = x;
+          cursorY = y;
+          if(step < steps) requestAnimationFrame(animate); else res();
+        }
+        requestAnimationFrame(animate);
+      });
       el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,clientX:cx,clientY:cy}));
     }catch(e){ console.error('[humanHover]', e); }
     await dwell(120,260);
@@ -1073,6 +1128,15 @@ let initDoneEarly = false;
     const s = await sessionGet();
     sessionCache.postedByUser = sessionCache.postedByUser || {};
     if(!onCache || !s.active) return;
+    if(sessionCache.detourReturn){
+      window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
+      await randomScrollWait(2000, 5000);
+      const back = sessionCache.detourReturn;
+      delete sessionCache.detourReturn;
+      await set(STORE_SESSION, sessionCache);
+      location.href = back;
+      return;
+    }
     const cfg = Object.assign({}, DEFAULTS, await loadConf());
     const user = cfg.accounts[cfg.accountIdx]?.user;
 
@@ -1135,9 +1199,7 @@ let initDoneEarly = false;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
-      await randomScrollWait(3000,7000);
-      await randomScrollWait(2000,6000);
-      await randomScrollWait(2000,4000);
+      await randomScrollWait(0, estimateReadingTime(document.body));
 
       const templates = cfg.templates || [];
       if(!templates.length){
@@ -1207,7 +1269,7 @@ let initDoneEarly = false;
       }
       
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(1500, 3000);
+      await randomScrollWait(0, estimateReadingTime(document.body));
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
         if(remaining > 0){
@@ -1220,6 +1282,18 @@ let initDoneEarly = false;
         await set(STORE_SESSION, sessionCache);
       }
       const links=collectTopicLinks(user);
+      if(Math.random() < 0.05){
+        const candidates = qa('#forum-main-col a[href*="/profil/"], .liste-sujets a[href*="/profil/"], #forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
+        const misc = candidates.filter(a=>!links.includes(a));
+        const detour = randomPick(misc);
+        if(detour){
+          log(`Random browse → ${(detour.textContent||'').trim().slice(0,80)}`);
+          sessionCache.detourReturn = location.href;
+          await set(STORE_SESSION, sessionCache);
+          detour.setAttribute('target','_self'); detour.click();
+          return;
+        }
+      }
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
       log(`Open topic → ${(pick.textContent||'').trim().slice(0,80)}`);
