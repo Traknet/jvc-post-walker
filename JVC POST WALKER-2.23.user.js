@@ -146,7 +146,22 @@
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
     const conf = await getFullConf();
-    for(const ch of txt){
+    function logNormDelay(){
+      const u1=Math.random(), u2=Math.random();
+      const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
+      return Math.max(30, Math.min(400, Math.exp(4.8 + 0.4*z)));
+    }
+    for(let i=0; i<txt.length; i++){
+      if(!conf.debug && !conf.dryRun && Math.random() < 0.03 && /\S/.test(txt[i])){
+        const m = txt.slice(i).match(/^[^\s.,!?;:]+/);
+        if(m){
+          await appendQuick(el, m[0]);
+          i += m[0].length - 1;
+          await sleep(rnd(80,160));
+          continue;
+        }
+      }
+      const ch = txt[i];
       if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
         const typo = rndChar();
         await appendQuick(el, typo);
@@ -158,10 +173,53 @@
       const prev=(el.value??el.textContent??'');
       if(el.isContentEditable){ el.textContent = prev + ch; }
       else setVal(el, prev + ch);
+      if(typeof el.selectionStart === 'number'){
+        const len=getValue(el).length;
+        el.setSelectionRange(len,len);
+      }
       el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
       el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
       el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
       await human();
+      await sleep(logNormDelay());
+      if(/[\s.,!?;:]/.test(ch)) await sleep(rnd(500,1500));
+      if(!conf.debug && !conf.dryRun && Math.random() < 0.02 && i>2){
+        const back = Math.min(Math.floor(rnd(2,5)), i+1);
+        for(let b=0;b<back;b++){
+          if(typeof el.selectionStart === 'number'){
+            const pos=Math.max(0, el.selectionStart-1);
+            el.setSelectionRange(pos,pos);
+          }
+          el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
+          el.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowLeft',bubbles:true}));
+          await sleep(rnd(40,120));
+        }
+        for(let b=0;b<back;b++){
+          const val=getValue(el);
+          if(typeof el.selectionStart === 'number'){
+            const start=el.selectionStart;
+            if(start>0){
+              setValue(el, val.slice(0,start-1)+val.slice(start));
+              el.setSelectionRange(start-1,start-1);
+            }
+          }else{
+            setValue(el, val.slice(0,-1));
+          }
+          el.dispatchEvent(new InputEvent('input',{inputType:'deleteContentBackward',bubbles:true}));
+          await sleep(rnd(80,160));
+        }
+        const len=getValue(el).length;
+        if(typeof el.selectionStart === 'number'){
+          el.setSelectionRange(len,len);
+        }
+        for(let b=0;b<back;b++){
+          el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+          el.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowRight',bubbles:true}));
+          await sleep(rnd(40,120));
+        }
+        i -= back;
+        continue;
+      }
       if(Math.random()<0.03){
         try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
         catch(e){ console.error('[typeHuman scroll]', e); }
@@ -806,6 +864,7 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
+      await dwell(1200, 2500);
       setValue(zone,'');
       await typeMixed(zone, template);
       await dwell(800,1400);
@@ -888,6 +947,8 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
+      await randomScrollWait(1000, 3000);
+      await dwell(1200, 2500);
       setValue(zone,'');
       await typeMixed(zone, template);
       await dwell(800,1400);
@@ -1423,7 +1484,7 @@ let initDoneEarly = false;
 
     maxInput.addEventListener('change', async ()=>{
       const val=parseInt(maxInput.value,10)||0;
-      const c=Object.assign({}, DEFAULTS, await loadConf());
+      const c=await loadConf();
       c.maxTopicPosts=val;
       await saveConf(c);
       sessionCache.maxTopicPosts=val;
