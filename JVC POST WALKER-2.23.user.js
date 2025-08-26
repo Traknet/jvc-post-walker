@@ -882,6 +882,8 @@ let initDoneEarly = false;
         if(location.href === currentUrl){
           log('Watchdog timeout → back to list.');
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          sessionCache.cooldownUntil = NOW() + 60000;      // 60 s
+          await set(STORE_SESSION, sessionCache);
           location.href = lastList;
         }
       }, WATCHDOG_MS);
