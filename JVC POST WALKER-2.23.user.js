@@ -821,6 +821,10 @@ let initDoneEarly = false;
       sessionCache.postedByUser = sessionCache.postedByUser || {};
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
       const user = cfg.accounts[cfg.accountIdx]?.user;
+      if(user && !sessionCache.postedByUser[user]){
+      sessionCache.postedByUser[user] = [];
+      await set(STORE_SESSION, sessionCache);
+    }
       const limit = sessionCache.maxTopicPosts || cfg.maxTopicPosts;
       if(limit && sessionCache.topicCount >= limit){
         log('Post limit reached → switching account.');
@@ -1155,7 +1159,7 @@ let initDoneEarly = false;
       if(!ALLOWED_FORUMS.has(forumId)){ const fid = pickForumIdWeighted(); await setTargetForum(fid); location.href=FORUMS[fid].list; return; }
       await sessionGet();
       sessionCache.postedByUser = sessionCache.postedByUser || {};
-      if(topicId){
+      if(topicId && user){
         const list = sessionCache.postedByUser[user] || [];
         if(list.includes(topicId)){
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
