@@ -41,20 +41,7 @@
       "honteux https://image.noelshack.com/minis/2020/41/5/1602270996-204848-full.png",
       "intéressant https://image.noelshack.com/minis/2021/35/2/1630432176-chatmirroirstretch.png",
       "rien compris https://image.noelshack.com/minis/2021/09/2/1614646545-lacoste-airpods-ent.png",
-      "ok https://image.noelshack.com/minis/2021/04/4/1611841177-ahiahiahi.png",
-      "solide https://image.noelshack.com/fichiers/2017/39/3/1506463228-risibg.png",
-      "propre https://image.noelshack.com/fichiers/2017/39/3/1506524542-ruth-perplexev2.png",
-      "bien joué https://image.noelshack.com/fichiers/2022/37/1/1663014384-ahi-pince-mais.png",
-      "validé https://image.noelshack.com/fichiers/2022/24/6/1655577587-ahi-triangle-clopent.png",
-      "stylé https://image.noelshack.com/fichiers/2021/04/4/1611841177-ahiahiahi.png",
-      "ça régale https://image.noelshack.com/fichiers/2018/26/7/1530476579-reupjesus.png",
-      "ça glisse https://image.noelshack.com/fichiers/2018/10/1/1520256134-risitasue2.png ",
-      "on respire https://image.noelshack.com/fichiers/2021/43/4/1635454847-elton-john-tison-golem.png",
-      "ça part en vrille https://image.noelshack.com/fichiers/2016/26/1467335935-jesus1.png",
-      "je me pose https://image.noelshack.com/fichiers/2025/29/3/1752654457-bayrouentent.png",
-      "jsuis mort https://image.noelshack.com/fichiers/2018/13/4/1522325846-jesusopti.png",
-      "force à toi https://image.noelshack.com/fichiers/2018/29/6/1532128784-risitas33.png",
-      "j’ai rien capté https://image.noelshack.com/fichiers/2016/24/1466366197-risitas10.png",
+      "ok https://image.noelshack.com/minis/2021/04/4/1611841177-ahiahiahi.png"
     ],
     maxTopicPosts:0  };
 
@@ -91,8 +78,21 @@
         catch(e){ console.error('[randomScrollWait]', e); }
       }
       await dwell(400,1200);
-    }
   }
+}
+
+async function humanScrollTo(targetY){
+  let delta = targetY - window.scrollY;
+  while (Math.abs(delta) > 1){
+    const direction = delta > 0 ? 1 : -1;
+    let step = rnd(20,60) * direction;
+    if (Math.abs(step) > Math.abs(delta)) step = delta;
+    try{ window.scrollBy({top: step, behavior:'smooth'}); }
+    catch(e){ console.error('[humanScrollTo]', e); window.scrollBy(0, step); }
+    await dwell(50,120);
+    delta = targetY - window.scrollY;
+  }
+}
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const NOW=()=>Date.now();
@@ -272,19 +272,15 @@
       let rect=el.getBoundingClientRect?.();
       if(!rect) return;
       const targetY = window.scrollY + rect.top - window.innerHeight/2 + rnd(-80,80);
-      const behavior = Math.random()<0.5 ? 'smooth' : 'instant';
-      try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
-      catch(e){ console.error('[humanHover] initial scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
+      await humanScrollTo(Math.max(0,targetY));
       await sleep(200+Math.random()*300);
       if(Math.random()<0.3){
         const dir = targetY > window.scrollY ? 1 : -1;
         const overshoot = rnd(30,120);
         const overY = Math.max(0, targetY + dir*overshoot);
-        try{ window.scrollTo({top:overY, behavior}); }
-        catch(e){ console.error('[humanHover] overshoot scrollTo', e); window.scrollTo(0,overY); }
+        await humanScrollTo(overY);
         await sleep(120+Math.random()*180);
-        try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
-        catch(e){ console.error('[humanHover] return scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
+        await humanScrollTo(Math.max(0,targetY));
         await sleep(120+Math.random()*180);
       }
       const wheelCount = Math.floor(rnd(1,4));
@@ -293,8 +289,7 @@
         el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:delta}));
         await sleep(60+Math.random()*120);
       }
-      try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
-      catch(e){ console.error('[humanHover] final scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
+      await humanScrollTo(Math.max(0,targetY));
       await sleep(120+Math.random()*180);
       rect=el.getBoundingClientRect?.();
       if(!rect) return;
@@ -832,13 +827,8 @@ let initDoneEarly = false;
     try{
       await sessionGet();
       sessionCache.postedByUser = sessionCache.postedByUser || {};
-      sessionCache.watchdogFails = sessionCache.watchdogFails || 0;
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
       const user = cfg.accounts[cfg.accountIdx]?.user;
-      if(user && !sessionCache.postedByUser[user]){
-      sessionCache.postedByUser[user] = [];
-      await set(STORE_SESSION, sessionCache);
-    }
       const limit = sessionCache.maxTopicPosts || cfg.maxTopicPosts;
       if(limit && sessionCache.topicCount >= limit){
         log('Post limit reached → switching account.');
@@ -899,19 +889,11 @@ let initDoneEarly = false;
       watchdog = setTimeout(async () => {
         if(location.href === currentUrl){
           log('Watchdog timeout → back to list.');
-          sessionCache.watchdogFails = (sessionCache.watchdogFails || 0) + 1;
+          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+          sessionCache.cooldownUntil = NOW() + 60000;      // 60 s
           await set(STORE_SESSION, sessionCache);
-          if(sessionCache.watchdogFails >= 2){
-            await randomScrollWait(10000, 15000);
-            await logoutAndSwitchAccount();
-            sessionCache.watchdogFails = 0;
-            await set(STORE_SESSION, sessionCache);
-          } else {
-            const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-            sessionCache.cooldownUntil = NOW() + 60000;      // 60 s
-            await set(STORE_SESSION, sessionCache);
-            location.href = lastList;
-          }        }
+          location.href = lastList;
+        }
       }, WATCHDOG_MS);
       let ok=false;
       const end=NOW()+WATCHDOG_MS;
@@ -940,7 +922,6 @@ let initDoneEarly = false;
           if(!list.includes(topicId)) list.push(topicId);
         }
         sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
-        sessionCache.watchdogFails = 0;
         await set(STORE_SESSION, sessionCache);
         if (await reachedDailyLimitAsync()) {
           log('Daily limit reached → switching account.');
@@ -1038,10 +1019,6 @@ let initDoneEarly = false;
       const check=()=>{ if(/\/login/i.test(location.pathname)) res(); else setTimeout(check,200); };
       check();
     });
-  }
-  
-  async function logoutAndSwitchAccount(){
-    await switchAccount();
   }
 
   /* ---------- session (timer only) ---------- */
@@ -1186,7 +1163,7 @@ let initDoneEarly = false;
       if(!ALLOWED_FORUMS.has(forumId)){ const fid = pickForumIdWeighted(); await setTargetForum(fid); location.href=FORUMS[fid].list; return; }
       await sessionGet();
       sessionCache.postedByUser = sessionCache.postedByUser || {};
-      if(topicId && user){
+      if(topicId){
         const list = sessionCache.postedByUser[user] || [];
         if(list.includes(topicId)){
           const lastList = await get(STORE_LAST_LIST, pickListWeighted());
@@ -1302,7 +1279,7 @@ let initDoneEarly = false;
         location.href = FORUMS[targetF].list; return;
       }
 
-      window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
+      await humanScrollTo(rnd(0, document.body.scrollHeight));
       await randomScrollWait(1500, 3000);
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
