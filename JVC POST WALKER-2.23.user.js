@@ -896,12 +896,9 @@ let initDoneEarly = false;
       await humanHover(postBtn);
       postBtn?.click();
       watchdog = setTimeout(async () => {
-        if(location.href === currentUrl){
-          log('Watchdog timeout → back to list.');
-          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-          sessionCache.cooldownUntil = NOW() + 60101;      // 60 s
-          await set(STORE_SESSION, sessionCache);
-          location.href = lastList;
+        if (location.href === currentUrl) {
+          await randomScrollWait(10000, 15000);      // pause 10‑15 s
+          await logoutAndSwitchAccount();            // basculer sur le compte suivant
         }
       }, WATCHDOG_MS);
       let ok=false;
@@ -950,7 +947,7 @@ let initDoneEarly = false;
     }catch(e){ console.error('[handleTopicPage]', e); return false; }
   }
 
-    async function postTemplateToTopic(template){
+async function postTemplateToTopic(template){
     try{
       let zone = q('textarea[name="message"], .jv-editor [contenteditable="true"]');
       if(!zone){
@@ -982,6 +979,14 @@ let initDoneEarly = false;
       console.error('[postTemplateToTopic]', e);
       return false;
     }
+  }
+  
+  async function logoutAndSwitchAccount(){
+    try { await sessionGet(); }
+    catch (e) { console.error('sessionGet failed', e); }
+    sessionCache.cooldownUntil = 0;
+    await set(STORE_SESSION, sessionCache);
+    await switchAccount();
   }
 
   async function switchAccount(){
