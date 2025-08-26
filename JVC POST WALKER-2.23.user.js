@@ -93,19 +93,6 @@
       await dwell(400,1200);
   }
 }
-
-async function humanScrollTo(targetY){
-  let delta = targetY - window.scrollY;
-  while (Math.abs(delta) > 1){
-    const direction = delta > 0 ? 1 : -1;
-    let step = rnd(20,60) * direction;
-    if (Math.abs(step) > Math.abs(delta)) step = delta;
-    try{ window.scrollBy({top: step, behavior:'smooth'}); }
-    catch(e){ console.error('[humanScrollTo]', e); window.scrollBy(0, step); }
-    await dwell(50,120);
-    delta = targetY - window.scrollY;
-  }
-}
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const NOW=()=>Date.now();
@@ -285,15 +272,19 @@ async function humanScrollTo(targetY){
       let rect=el.getBoundingClientRect?.();
       if(!rect) return;
       const targetY = window.scrollY + rect.top - window.innerHeight/2 + rnd(-80,80);
-      await humanScrollTo(Math.max(0,targetY));
+      const behavior = Math.random()<0.5 ? 'smooth' : 'instant';
+      try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
+      catch(e){ console.error('[humanHover] initial scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
       await sleep(200+Math.random()*300);
       if(Math.random()<0.3){
         const dir = targetY > window.scrollY ? 1 : -1;
         const overshoot = rnd(30,120);
         const overY = Math.max(0, targetY + dir*overshoot);
-        await humanScrollTo(overY);
+        try{ window.scrollTo({top:overY, behavior}); }
+        catch(e){ console.error('[humanHover] overshoot scrollTo', e); window.scrollTo(0,overY); }
         await sleep(120+Math.random()*180);
-        await humanScrollTo(Math.max(0,targetY));
+        try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
+        catch(e){ console.error('[humanHover] return scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
         await sleep(120+Math.random()*180);
       }
       const wheelCount = Math.floor(rnd(1,4));
@@ -302,7 +293,8 @@ async function humanScrollTo(targetY){
         el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:delta}));
         await sleep(60+Math.random()*120);
       }
-      await humanScrollTo(Math.max(0,targetY));
+      try{ window.scrollTo({top: Math.max(0,targetY), behavior}); }
+      catch(e){ console.error('[humanHover] final scrollTo', e); window.scrollTo(0, Math.max(0,targetY)); }
       await sleep(120+Math.random()*180);
       rect=el.getBoundingClientRect?.();
       if(!rect) return;
@@ -1296,7 +1288,7 @@ let initDoneEarly = false;
         location.href = FORUMS[targetF].list; return;
       }
 
-      await humanScrollTo(rnd(0, document.body.scrollHeight));
+      window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
       await randomScrollWait(1500, 3000);
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
