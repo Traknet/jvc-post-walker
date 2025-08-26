@@ -41,7 +41,20 @@
       "honteux https://image.noelshack.com/minis/2020/41/5/1602270996-204848-full.png",
       "intéressant https://image.noelshack.com/minis/2021/35/2/1630432176-chatmirroirstretch.png",
       "rien compris https://image.noelshack.com/minis/2021/09/2/1614646545-lacoste-airpods-ent.png",
-      "ok https://image.noelshack.com/minis/2021/04/4/1611841177-ahiahiahi.png"
+      "ok https://image.noelshack.com/minis/2021/04/4/1611841177-ahiahiahi.png",
+      "solide https://image.noelshack.com/fichiers/2017/39/3/1506463228-risibg.png",
+      "propre https://image.noelshack.com/fichiers/2017/39/3/1506524542-ruth-perplexev2.png",
+      "bien joué https://image.noelshack.com/fichiers/2022/37/1/1663014384-ahi-pince-mais.png",
+      "validé https://image.noelshack.com/fichiers/2022/24/6/1655577587-ahi-triangle-clopent.png",
+      "stylé https://image.noelshack.com/fichiers/2021/04/4/1611841177-ahiahiahi.png",
+      "ça régale https://image.noelshack.com/fichiers/2018/26/7/1530476579-reupjesus.png",
+      "ça glisse https://image.noelshack.com/fichiers/2018/10/1/1520256134-risitasue2.png ",
+      "on respire https://image.noelshack.com/fichiers/2021/43/4/1635454847-elton-john-tison-golem.png",
+      "ça part en vrille https://image.noelshack.com/fichiers/2016/26/1467335935-jesus1.png",
+      "je me pose https://image.noelshack.com/fichiers/2025/29/3/1752654457-bayrouentent.png",
+      "jsuis mort https://image.noelshack.com/fichiers/2018/13/4/1522325846-jesusopti.png",
+      "force à toi https://image.noelshack.com/fichiers/2018/29/6/1532128784-risitas33.png",
+      "j’ai rien capté https://image.noelshack.com/fichiers/2016/24/1466366197-risitas10.png",
     ],
     maxTopicPosts:0  };
 
@@ -819,6 +832,7 @@ let initDoneEarly = false;
     try{
       await sessionGet();
       sessionCache.postedByUser = sessionCache.postedByUser || {};
+      sessionCache.watchdogFails = sessionCache.watchdogFails || 0;
       const cfg = Object.assign({}, DEFAULTS, await loadConf());
       const user = cfg.accounts[cfg.accountIdx]?.user;
       if(user && !sessionCache.postedByUser[user]){
@@ -885,11 +899,19 @@ let initDoneEarly = false;
       watchdog = setTimeout(async () => {
         if(location.href === currentUrl){
           log('Watchdog timeout → back to list.');
-          const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-          sessionCache.cooldownUntil = NOW() + 60000;      // 60 s
+          sessionCache.watchdogFails = (sessionCache.watchdogFails || 0) + 1;
           await set(STORE_SESSION, sessionCache);
-          location.href = lastList;
-        }
+          if(sessionCache.watchdogFails >= 2){
+            await randomScrollWait(10000, 15000);
+            await logoutAndSwitchAccount();
+            sessionCache.watchdogFails = 0;
+            await set(STORE_SESSION, sessionCache);
+          } else {
+            const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+            sessionCache.cooldownUntil = NOW() + 60000;      // 60 s
+            await set(STORE_SESSION, sessionCache);
+            location.href = lastList;
+          }        }
       }, WATCHDOG_MS);
       let ok=false;
       const end=NOW()+WATCHDOG_MS;
@@ -918,6 +940,7 @@ let initDoneEarly = false;
           if(!list.includes(topicId)) list.push(topicId);
         }
         sessionCache.cooldownUntil = NOW() + rnd(25000, 35000);
+        sessionCache.watchdogFails = 0;
         await set(STORE_SESSION, sessionCache);
         if (await reachedDailyLimitAsync()) {
           log('Daily limit reached → switching account.');
@@ -1015,6 +1038,10 @@ let initDoneEarly = false;
       const check=()=>{ if(/\/login/i.test(location.pathname)) res(); else setTimeout(check,200); };
       check();
     });
+  }
+  
+  async function logoutAndSwitchAccount(){
+    await switchAccount();
   }
 
   /* ---------- session (timer only) ---------- */
