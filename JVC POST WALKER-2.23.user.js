@@ -154,7 +154,7 @@
     el.dispatchEvent(new Event('input',{bubbles:true}));
     el.dispatchEvent(new Event('change',{bubbles:true}));
   }
-  async function typeHuman(el, txt){
+  async function typeHuman(el, txt, allowTypos = true){
     if(!el) return;
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
@@ -165,7 +165,7 @@
       return Math.max(30, Math.min(400, Math.exp(4.8 + 0.4*z)));
     }
     for(let i=0; i<txt.length; i++){
-      if(!conf.debug && !conf.dryRun && Math.random() < 0.03 && /\S/.test(txt[i])){
+      if(allowTypos && !conf.debug && !conf.dryRun && Math.random() < 0.03 && /\S/.test(txt[i])){
         const m = txt.slice(i).match(/^[^\s.,!?;:]+/);
         if(m){
           await appendQuick(el, m[0]);
@@ -175,7 +175,7 @@
         }
       }
       const ch = txt[i];
-      if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
+      if(allowTypos && !conf.debug && !conf.dryRun && Math.random() < 0.05){
         const typo = rndChar();
         await appendQuick(el, typo);
         await sleep(rnd(80,160));
@@ -503,8 +503,8 @@ let initDoneEarly = false;
       setValue(pseudoEl, '');
       setValue(passEl, '');
       await dwell(2000, 3000);
-      await typeHuman(pseudoEl, account.user);
-      await typeHuman(passEl, account.pass);
+      await typeHuman(pseudoEl, account.user, false);
+      await typeHuman(passEl, account.pass, false);
     }
     if(pseudoEl.value !== account.user || passEl.value !== account.pass){
       console.warn('autoLogin: credential fill mismatch');
@@ -1561,6 +1561,8 @@ async function postTemplateToTopic(template){
       const cfg=await loadConf();
       cfg.maxTopicPosts=val;
       await saveConf(cfg);
+      sessionCache.maxTopicPosts = val;
+      await set(STORE_SESSION, sessionCache);
       await updateSessionUI();
     });
     const accountWrap=document.createElement('div');
