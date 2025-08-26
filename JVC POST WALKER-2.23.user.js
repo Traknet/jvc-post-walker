@@ -27,6 +27,7 @@
     accountIdx:0,
     debug:false,
     dryRun:false,
+    checkCdn:true,
     templates:[
       "grave https://image.noelshack.com/minis/2018/13/4/1522325846-jesusopti.png",
       "gg https://image.noelshack.com/minis/2018/29/6/1532128784-risitas33.png",
@@ -404,6 +405,8 @@ let initDoneEarly = false;
   }
 
   async function checkCdnResources(box){
+    if(!conf.checkCdn) return;
+    const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
     const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
     let ok=true;
     for(const d of domains){
@@ -1319,21 +1322,22 @@ let initDoneEarly = false;
     const posted = sessionCache.postedByUser?.[user] || [];
     for(const a of nodes){
       const href=a.getAttribute('href')||'';
-      if(/\/messages-prives\//i.test(href)) continue;
+      if(/\/messages-prives\//i.test(href)){ console.debug('reject:pm', href); continue; }
       let abs, info;
-      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); continue; }
-      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')) continue;
-      if(seen.has(abs)) continue;
-     if(posted.includes(info.topicId)) continue;
+      try{ abs=new URL(href,ORIG).href; info=getInfoFromHref(abs); }catch(e){ console.error('[collectTopicLinks] URL parse', e); console.debug('reject:parse', href); continue; }
+      if(!info || !ALLOWED_FORUMS.has(info.forumId||'')){ console.debug('reject:forum', href); continue; }
+      if(seen.has(abs)){ console.debug('reject:dup', href); continue; }
+      if(posted.includes(info.topicId)){ console.debug('reject:posted', href); continue; }
       if(mine){
         const row=a.closest('tr, li, div');
         const authorEl=row?.querySelector('[data-testid="topic-author"], .topic-author, .topic-author__name, .topic__pseudo');
         const author=authorEl?.textContent?.trim().toLowerCase();
-        if(author && author===mine) continue;
+        if(author && author===mine){ console.debug('reject:mine', href); continue; }
       }
 
       seen.add(abs); out.push(a);
     }
+    if(out.length===0) console.warn('collectTopicLinks: no usable links');
     return out;
   }
   
@@ -1530,13 +1534,27 @@ let initDoneEarly = false;
 
     maxInput.addEventListener('change', async ()=>{
       const val=parseInt(maxInput.value,10)||0;
-      const c=await loadConf();
-      c.maxTopicPosts=val;
-      await saveConf(c);
-      sessionCache.maxTopicPosts=val;
-      await set(STORE_SESSION, sessionCache);
+      const cfg=await getFullConf();
+      cfg.maxTopicPosts=val;
+      await saveConf(cfg);
       await updateSessionUI();
     });
+    const cdnWrap=document.createElement('div');
+    Object.assign(cdnWrap.style,{display:'flex',alignItems:'center',gap:'4px',margin:'6px 0'});
+    const cdnInput=document.createElement('input');
+    cdnInput.type='checkbox';
+    cdnInput.id='jvc-postwalker-checkcdn';
+    cdnInput.checked=conf.checkCdn!==false;
+    const cdnLabel=document.createElement('label');
+    cdnLabel.textContent='Check CDN';
+    cdnLabel.htmlFor='jvc-postwalker-checkcdn';
+    cdnLabel.title='Verify access to getjan.io/getjad.io';
+    cdnInput.addEventListener('change', async ()=>{
+      const c=await loadConf();
+      c.checkCdn=cdnInput.checked;
+      await saveConf(c);
+    });
+    cdnWrap.append(cdnInput,cdnLabel);
     const accountWrap=document.createElement('div');
     Object.assign(accountWrap.style,{display:'flex',alignItems:'center',gap:'4px',margin:'6px 0'});
     const accountLabel=document.createElement('span');
@@ -1699,7 +1717,7 @@ let initDoneEarly = false;
     });
     logEl=logBox;
 
-    const appendEls=[header,actions,hoursWrap,maxWrap,accountWrap,accountMgr];
+    const appendEls=[header,actions,hoursWrap,maxWrap,cdnWrap,accountWrap,accountMgr];
     if(loginWrap) appendEls.push(loginWrap);
     appendEls.push(chronoWrap,logBox);
     box.append(...appendEls);
@@ -1707,7 +1725,7 @@ let initDoneEarly = false;
     const parent=document.body||document.documentElement;
     parent.appendChild(box);
 
-    checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
+    if(conf.checkCdn) checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
 
     let b=q('#jvc-postwalker-badge');
     if(!b){
