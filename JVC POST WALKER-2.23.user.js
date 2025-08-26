@@ -82,15 +82,6 @@
   }
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-  function estimateReadingTime(el){
-    if(!el) return 0;
-    const text = el.textContent || '';
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-    const messageCount = qa('.bloc-message-forum, .message', el).length;
-    const wordsTime = wordCount * 300;
-    const messagesTime = messageCount * 4000;
-    return Math.max(wordsTime, messagesTime);
-  }
   const NOW=()=>Date.now();
   const ORIG=typeof location !== 'undefined' ? location.origin : '';
   let chronoEl=null, statusEl=null, logEl=null, postCountEl=null;
@@ -346,6 +337,7 @@ const STORE_ON='jvc_postwalker_on';
 const STORE_SESSION='jvc_postwalker_session';
 const STORE_TARGET_FORUM='jvc_postwalker_target_forum';
 const STORE_LAST_LIST='jvc_postwalker_last_list';
+const STORE_RANDOM_VISIT='jvc_postwalker_random_visit';
 const STORE_PENDING_LOGIN='jvc_postwalker_pending_login';
 const STORE_CF_RETRIES='jvc_postwalker_cf_retries';
 const STORE_LOGIN_REFUSED='jvc_postwalker_login_refused';
@@ -840,6 +832,8 @@ let initDoneEarly = false;
       if(locked){
         log('Topic locked → back to list.');
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+        await randomScrollWait(1000, 4000);
+        await dwell(800, 1600);
         location.href = lastList;
         return false;
       }
@@ -930,8 +924,6 @@ let initDoneEarly = false;
           return 'switch';
         }
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        await randomScrollWait(1000, 4000);
-        await dwell(800, 1600);
         window.location.assign(lastList);
         return 'posted';
       }
@@ -1136,6 +1128,17 @@ let initDoneEarly = false;
     const cfg = Object.assign({}, DEFAULTS, await loadConf());
     const user = cfg.accounts[cfg.accountIdx]?.user;
 
+    // random visit: scroll a bit then return to last list
+    if(await get(STORE_RANDOM_VISIT, false)){
+      log('Random visit → browsing before returning.');
+      await set(STORE_RANDOM_VISIT, false);
+      await randomScrollWait(3000,7000);
+      await randomScrollWait(2000,6000);
+      const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+      location.href = lastList;
+      return;
+    }
+
     // 1) enforce forum scope with weighted target
     if(!pageIsAllowed()){
       const fid = pickForumIdWeighted(); await setTargetForum(fid);
@@ -1195,9 +1198,9 @@ let initDoneEarly = false;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
-      await randomScrollWait(0, estimateReadingTime(document.body));
-      await randomScrollWait(0, estimateReadingTime(document.body));
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(3000,7000);
+      await randomScrollWait(2000,6000);
+      await randomScrollWait(2000,4000);
 
       const templates = cfg.templates || [];
       if(!templates.length){
@@ -1267,7 +1270,7 @@ let initDoneEarly = false;
       }
 
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(1500, 3000);
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
         if(remaining > 0){
@@ -1280,6 +1283,18 @@ let initDoneEarly = false;
         await set(STORE_SESSION, sessionCache);
       }
       const links=collectTopicLinks(user);
+      if(Math.random() < 0.05){
+        const misc = collectMiscLinks(links);
+        if(misc.length){
+          const rand = randomPick(misc);
+          log(`Random browse → ${(rand.textContent||'').trim().slice(0,80)}`);
+          await humanHover(rand);
+          await set(STORE_LAST_LIST, location.href);
+          await set(STORE_RANDOM_VISIT, true);
+          rand.setAttribute('target','_self'); rand.click();
+          return;
+        }
+      }
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
       log(`Open topic → ${(pick.textContent||'').trim().slice(0,80)}`);
@@ -1317,6 +1332,26 @@ let initDoneEarly = false;
         if(author && author===mine) continue;
       }
 
+      seen.add(abs); out.push(a);
+    }
+    return out;
+  }
+  
+  function collectMiscLinks(exclude){
+    const excludeSet=new Set();
+    for(const a of exclude){
+      const href=a.getAttribute('href')||'';
+      try{ excludeSet.add(new URL(href,ORIG).href); }catch(e){ /* ignore */ }
+    }
+    const nodes=qa('a[href]');
+    const out=[], seen=new Set();
+    for(const a of nodes){
+      const href=a.getAttribute('href')||'';
+      if(/\/messages-prives\//i.test(href)) continue;
+      if(!/\/(profil|forums)\//i.test(href)) continue;
+      let abs;
+      try{ abs=new URL(href,ORIG).href; }catch(e){ continue; }
+      if(excludeSet.has(abs) || seen.has(abs)) continue;
       seen.add(abs); out.push(a);
     }
     return out;
