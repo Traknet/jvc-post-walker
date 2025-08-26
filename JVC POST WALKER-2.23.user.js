@@ -895,8 +895,10 @@ let initDoneEarly = false;
       await set(STORE_PENDING_POST, { topicId: pendingTopicId, ts: NOW() });
       await humanHover(postBtn);
       postBtn?.click();
+      let watchdogTriggered = false;
       watchdog = setTimeout(async () => {
         if (location.href === currentUrl) {
+          watchdogTriggered = true;
           await randomScrollWait(10000, 15000);      // pause 10‑15 s
           await logoutAndSwitchAccount();            // basculer sur le compte suivant
         }
@@ -908,6 +910,7 @@ let initDoneEarly = false;
         if(location.href!==prevUrl || qa('.bloc-message-forum').length>beforeMsgs){ ok=true; break; }
         if(hasVisibleError()) break;
       }
+      if (watchdogTriggered) return 'switch';
       const success = ok && !hasVisibleError();
       if(!success && reachedDailyLimit()){
         log('Daily limit reached → switching account.');
@@ -1555,7 +1558,7 @@ async function postTemplateToTopic(template){
 
     maxInput.addEventListener('change', async ()=>{
       const val=parseInt(maxInput.value,10)||0;
-      const cfg=await getFullConf();
+      const cfg=await loadConf();
       cfg.maxTopicPosts=val;
       await saveConf(cfg);
       await updateSessionUI();
