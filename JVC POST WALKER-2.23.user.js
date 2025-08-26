@@ -27,7 +27,6 @@
     accountIdx:0,
     debug:false,
     dryRun:false,
-    checkCdn:true,
     templates:[
       "grave https://image.noelshack.com/minis/2018/13/4/1522325846-jesusopti.png",
       "gg https://image.noelshack.com/minis/2018/29/6/1532128784-risitas33.png",
@@ -405,8 +404,6 @@ let initDoneEarly = false;
   }
 
   async function checkCdnResources(box){
-    if(!conf.checkCdn) return;
-    const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
     const domains=['cdn.lib.getjan.io','cdn.lib.getjad.io'];
     let ok=true;
     for(const d of domains){
@@ -1340,7 +1337,7 @@ let initDoneEarly = false;
     if(out.length===0) console.warn('collectTopicLinks: no usable links');
     return out;
   }
-  
+
   function collectMiscLinks(exclude){
     const excludeSet=new Set();
     for(const a of exclude){
@@ -1539,22 +1536,6 @@ let initDoneEarly = false;
       await saveConf(cfg);
       await updateSessionUI();
     });
-    const cdnWrap=document.createElement('div');
-    Object.assign(cdnWrap.style,{display:'flex',alignItems:'center',gap:'4px',margin:'6px 0'});
-    const cdnInput=document.createElement('input');
-    cdnInput.type='checkbox';
-    cdnInput.id='jvc-postwalker-checkcdn';
-    cdnInput.checked=conf.checkCdn!==false;
-    const cdnLabel=document.createElement('label');
-    cdnLabel.textContent='Check CDN';
-    cdnLabel.htmlFor='jvc-postwalker-checkcdn';
-    cdnLabel.title='Verify access to getjan.io/getjad.io';
-    cdnInput.addEventListener('change', async ()=>{
-      const c=await loadConf();
-      c.checkCdn=cdnInput.checked;
-      await saveConf(c);
-    });
-    cdnWrap.append(cdnInput,cdnLabel);
     const accountWrap=document.createElement('div');
     Object.assign(accountWrap.style,{display:'flex',alignItems:'center',gap:'4px',margin:'6px 0'});
     const accountLabel=document.createElement('span');
@@ -1717,7 +1698,7 @@ let initDoneEarly = false;
     });
     logEl=logBox;
 
-    const appendEls=[header,actions,hoursWrap,maxWrap,cdnWrap,accountWrap,accountMgr];
+    const appendEls=[header,actions,hoursWrap,maxWrap,accountWrap,accountMgr];
     if(loginWrap) appendEls.push(loginWrap);
     appendEls.push(chronoWrap,logBox);
     box.append(...appendEls);
@@ -1725,7 +1706,7 @@ let initDoneEarly = false;
     const parent=document.body||document.documentElement;
     parent.appendChild(box);
 
-    if(conf.checkCdn) checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
+    checkCdnResources(box).catch(e=>console.error('CDN check failed',e));
 
     let b=q('#jvc-postwalker-badge');
     if(!b){
