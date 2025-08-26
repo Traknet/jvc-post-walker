@@ -82,6 +82,15 @@
   }
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  function estimateReadingTime(el){
+    if(!el) return 0;
+    const text = el.textContent || '';
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const messageCount = qa('.bloc-message-forum, .message', el).length;
+    const wordsTime = wordCount * 300;
+    const messagesTime = messageCount * 4000;
+    return Math.max(wordsTime, messagesTime);
+  }
   const NOW=()=>Date.now();
   const ORIG=typeof location !== 'undefined' ? location.origin : '';
   let chronoEl=null, statusEl=null, logEl=null, postCountEl=null;
@@ -921,6 +930,8 @@ let initDoneEarly = false;
           return 'switch';
         }
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
+        await randomScrollWait(1000, 4000);
+        await dwell(800, 1600);
         window.location.assign(lastList);
         return 'posted';
       }
@@ -1184,9 +1195,9 @@ let initDoneEarly = false;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
-      await randomScrollWait(3000,7000);
-      await randomScrollWait(2000,6000);
-      await randomScrollWait(2000,4000);
+      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(0, estimateReadingTime(document.body));
 
       const templates = cfg.templates || [];
       if(!templates.length){
@@ -1256,7 +1267,7 @@ let initDoneEarly = false;
       }
 
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(1500, 3000);
+      await randomScrollWait(0, estimateReadingTime(document.body));
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
         if(remaining > 0){
