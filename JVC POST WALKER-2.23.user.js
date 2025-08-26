@@ -63,13 +63,6 @@
   const human=()=>sleep(Math.round(rnd(49,105)));
   const dwell=(a=350,b=950)=>sleep(Math.round(rnd(a,b)));
   const rndChar=()=>String.fromCharCode(97+Math.floor(Math.random()*26));
-  const rndNormal=(mu=0,sigma=1)=>{
-    let u=0,v=0;
-    while(u===0) u=Math.random();
-    while(v===0) v=Math.random();
-    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*sigma+mu;
-  };
-  const charDelay=()=>Math.round(Math.exp(rndNormal(4.2,0.5)));
 /**
  * Waits a random duration between `min` and `max` while simulating scrolls.
  * If `min >= max`, the values are swapped to ensure a valid interval.
@@ -86,11 +79,6 @@
       }
       await dwell(400,1200);
     }
-  }
-    function estimateReadingTime(el){
-    const words=(el?.innerText||'').trim().split(/\s+/).filter(Boolean).length;
-    const WPM=200;
-    return Math.round((words/WPM)*60000);
   }
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -158,43 +146,29 @@
     el.scrollIntoView?.({block:'center'});
     el.focus?.();
     const conf = await getFullConf();
-    const tokens = txt.match(/\p{L}+|\s+|[^\p{L}\s]/gu) || [];
-    for(const token of tokens){
-      if(!token) continue;
-      if(/^\p{L}+$/u.test(token) && !conf.debug && !conf.dryRun && Math.random() < 0.1){
-        await appendQuick(el, token);
-        await sleep(rnd(200,400));
-        continue;
+    for(const ch of txt){
+      if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
+        const typo = rndChar();
+        await appendQuick(el, typo);
+        await sleep(rnd(80,160));
+        const corrected = getValue(el).slice(0,-1);
+        setValue(el, corrected);
+        el.dispatchEvent(new InputEvent('input', {inputType:'deleteContentBackward', bubbles:true}));
       }
-      for(const ch of token){
-        if(!conf.debug && !conf.dryRun && Math.random() < 0.05){
-          const mistakeLen = 1 + Math.floor(Math.random()*3);
-          let typos='';
-          for(let i=0;i<mistakeLen;i++) typos += rndChar();
-          await appendQuick(el, typos);
-          await sleep(rnd(80,160));
-          const corrected = getValue(el).slice(0,-mistakeLen);
-          setValue(el, corrected);
-          for(let i=0;i<mistakeLen;i++){
-            el.dispatchEvent(new InputEvent('input',{inputType:'deleteContentBackward',bubbles:true}));
-          }
-        }
-        const prev=(el.value??el.textContent??'');
-        if(el.isContentEditable){ el.textContent = prev + ch; }
-        else setVal(el, prev + ch);
-        el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
-        el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
-        el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
-        await sleep(charDelay());
-        if(/[.,!?;:]/.test(ch) || /\s/.test(ch)) await sleep(rnd(200,400));
-        if(Math.random()<0.03){
-          try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
-          catch(e){ console.error('[typeHuman scroll]', e); }
-          await sleep(charDelay());
-        }
+      const prev=(el.value??el.textContent??'');
+      if(el.isContentEditable){ el.textContent = prev + ch; }
+      else setVal(el, prev + ch);
+      el.dispatchEvent(new KeyboardEvent('keydown',{key:ch,bubbles:true}));
+      el.dispatchEvent(new KeyboardEvent('keypress',{key:ch,bubbles:true}));
+      el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
+      await human();
+      if(Math.random()<0.03){
+        try{ window.scrollBy({top:rnd(-60,60),behavior:'smooth'}); }
+        catch(e){ console.error('[typeHuman scroll]', e); }
+        await human();
       }
     }
-    await sleep(charDelay());
+    await human();
   }
 
   // “Paste URLs, type everything else” for message field
@@ -799,8 +773,6 @@ let initDoneEarly = false;
       if(locked){
         log('Topic locked → back to list.');
         const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-        await randomScrollWait(1000, 4000);
-        await dwell(800, 1600);
         location.href = lastList;
         return false;
       }
@@ -834,12 +806,8 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
-      await randomScrollWait(1000,3000);
-      await dwell(1200,2500);
       setValue(zone,'');
       await typeMixed(zone, template);
-      await randomScrollWait(500,1500);
-      await humanHover(zone);
       await dwell(800,1400);
       const beforeMsgs=qa('.bloc-message-forum').length;
       const prevUrl=location.href;
@@ -920,8 +888,6 @@ let initDoneEarly = false;
       await human();
       zone.focus?.();
       await humanHover(zone);
-      await randomScrollWait(1000,3000);
-      await dwell(1200,2500);
       setValue(zone,'');
       await typeMixed(zone, template);
       await dwell(800,1400);
@@ -1097,16 +1063,6 @@ let initDoneEarly = false;
     if(!onCache || !s.active) return;
     const cfg = Object.assign({}, DEFAULTS, await loadConf());
     const user = cfg.accounts[cfg.accountIdx]?.user;
-      
-    if(sessionCache.exploring){
-      await randomScrollWait(2000,5000);
-      await randomScrollWait(2000,5000);
-      sessionCache.exploring = false;
-      await set(STORE_SESSION, sessionCache);
-      const lastList = await get(STORE_LAST_LIST, pickListWeighted());
-      location.href = lastList;
-      return;
-    }
 
     // 1) enforce forum scope with weighted target
     if(!pageIsAllowed()){
@@ -1167,7 +1123,9 @@ let initDoneEarly = false;
       }
       const atLast = await ensureAtLastPage();
       await dwell(800,2000);
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(3000,7000);
+      await randomScrollWait(2000,6000);
+      await randomScrollWait(2000,4000);
 
       const templates = cfg.templates || [];
       if(!templates.length){
@@ -1237,7 +1195,7 @@ let initDoneEarly = false;
       }
 
       window.scrollTo({top: rnd(0, document.body.scrollHeight), behavior: 'smooth'});
-      await randomScrollWait(0, estimateReadingTime(document.body));
+      await randomScrollWait(1500, 3000);
       if(sessionCache.cooldownUntil){
         const remaining = sessionCache.cooldownUntil - NOW();
         if(remaining > 0){
@@ -1250,27 +1208,6 @@ let initDoneEarly = false;
         await set(STORE_SESSION, sessionCache);
       }
       const links=collectTopicLinks(user);
-      if(Math.random()<0.05){
-        const nodes=qa('#forum-main-col a[href*="/profil/"], #forum-main-col a[href*="/forums/"][href$=".htm"], .liste-sujets a[href*="/profil/"], .liste-sujets a[href*="/forums/"][href$=".htm"]');
-        const excluded=new Set(links);
-        const candidates=[];
-        for(const a of nodes){
-          const href=a.getAttribute('href')||'';
-          if(excluded.has(a)) continue;
-          if(/\/messages-prives\//i.test(href)) continue;
-          candidates.push(a);
-        }
-        if(candidates.length){
-          const rndLink=randomPick(candidates);
-          log(`Random browse → ${(rndLink.textContent||'').trim().slice(0,80)}`);
-          await humanHover(rndLink);
-          sessionCache.exploring = true;
-          await set(STORE_SESSION, sessionCache);
-          await set(STORE_LAST_LIST, location.href);
-          rndLink.setAttribute('target','_self'); rndLink.click();
-          return;
-        }
-      }
       if(!links.length){ log('Forum list detected but no usable links.'); tickSoon(800); return; }
       const pick=randomPick(links);
       log(`Open topic → ${(pick.textContent||'').trim().slice(0,80)}`);
